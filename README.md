@@ -1,4 +1,4 @@
-# go-links
+# opengolinks
 
 A small multi-domain link shortener with QR codes, link-in-bio galleries, UTM tagging and click statistics, built with Next.js and Postgres. It was built with Claude, and it is published as a readable reference that you can fork and adapt, not as a product.
 
