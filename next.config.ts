@@ -8,6 +8,9 @@ const common = [
 const nextConfig: NextConfig = {
   poweredByHeader: false,
   serverExternalPackages: ["pg", "@electric-sql/pglite"],
+  // Server Actions refuse bodies over 1 MB by default, which would stop a CSV just under the 1 MB limit from
+  // reaching the import action and showing its readable message.
+  experimental: { serverActions: { bodySizeLimit: "2mb" } },
   async headers() {
     return [
       { source: "/admin/:path*", headers: [...common, { key: "X-Frame-Options", value: "DENY" }] },

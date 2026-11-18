@@ -15,6 +15,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
           <Link href="/admin/campaigns" className="hover:text-cobalt">Campaigns</Link>
           <Link href="/admin/galleries" className="hover:text-cobalt">Galleries</Link>
           <Link href="/admin/domains" className="hover:text-cobalt">Domains</Link>
+          <Link href="/admin/import" className="hover:text-cobalt">Import</Link>
         </nav>
         <form action={logoutAction}>
           <button className="text-sm text-licorice/70 hover:text-licorice">Sign out</button>

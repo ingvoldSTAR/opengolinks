@@ -1,5 +1,6 @@
 import { query } from "./db";
 import { appTimezone } from "./timezone";
+import { GALLERY_MARKER } from "./import";
 import { randomSlug } from "./validate";
 import type { Utm } from "./utm";
 
@@ -308,4 +309,58 @@ export async function campaignChannels(campaign: string): Promise<LabelCount[]> 
       group by 1 order by n desc, label`,
     [campaign],
   );
+}
+
+/* ---------- Import ---------- */
+
+/** "domainId/slug" -> destination, for every stored link. Lets an import skip what is already here. */
+export async function existingLinkMap(): Promise<Map<string, string>> {
+  const rows = await query<{ domain_id: number; slug: string; destination_url: string }>(
+    `select domain_id, slug, destination_url from links
+     union all
+     select domain_id, slug, $1::text from galleries`,
+    [GALLERY_MARKER],
+  );
+  return new Map(rows.map((r) => [r.domain_id + "/" + r.slug, r.destination_url]));
+}
+
+export type ImportRow = {
+  domainId: number;
+  slug: string;
+  destination: string;
+  title: string | null;
+  notes: string;
+  createdAt: string | null;
+  utm: Utm;
+};
+
+/** Inserts in batches. Existing (domain, slug) pairs are left untouched. Returns how many were created. */
+export async function importLinks(rows: ImportRow[]): Promise<number> {
+  const CHUNK = 100;
+  const COLS = 11;
+  let created = 0;
+  for (let i = 0; i < rows.length; i += CHUNK) {
+    const chunk = rows.slice(i, i + CHUNK);
+    const params: unknown[] = [];
+    const tuples = chunk.map((r, row) => {
+      params.push(
+        r.domainId, r.slug, r.destination, r.title, r.notes, r.createdAt,
+        r.utm.utm_source, r.utm.utm_medium, r.utm.utm_campaign, r.utm.utm_term, r.utm.utm_content,
+      );
+      const p = (n: number) => "$" + (row * COLS + n);
+      const list = Array.from({ length: COLS }, (_, k) => p(k + 1));
+      list[5] = "coalesce(" + p(6) + "::timestamptz, now())";
+      return "(" + list.join(", ") + ")";
+    });
+    const inserted = await query<{ id: number }>(
+      `insert into links (domain_id, slug, destination_url, title, notes, created_at,
+                          utm_source, utm_medium, utm_campaign, utm_term, utm_content)
+       values ` + tuples.join(", ") + `
+       on conflict (domain_id, slug) do nothing
+       returning id`,
+      params,
+    );
+    created += inserted.length;
+  }
+  return created;
 }
