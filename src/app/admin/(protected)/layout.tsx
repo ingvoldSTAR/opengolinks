@@ -10,7 +10,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
     <div className="mx-auto max-w-5xl px-4 pb-24">
       <header className="flex items-center justify-between py-6">
         <nav className="flex items-center gap-6 text-sm">
-          <Link href="/admin" className="text-base font-semibold">Go links</Link>
+          <Link href="/admin" className="text-base font-semibold">opengolinks</Link>
           <Link href="/admin" className="hover:text-cobalt">Links</Link>
           <Link href="/admin/campaigns" className="hover:text-cobalt">Campaigns</Link>
           <Link href="/admin/galleries" className="hover:text-cobalt">Galleries</Link>

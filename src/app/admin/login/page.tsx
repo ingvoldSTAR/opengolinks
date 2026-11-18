@@ -15,7 +15,7 @@ export default async function LoginPage({
   const github = Boolean(process.env.GITHUB_CLIENT_ID && process.env.GITHUB_CLIENT_SECRET);
   return (
     <main className="mx-auto mt-32 max-w-sm px-4">
-      <h1 className="text-xl font-semibold">Go links</h1>
+      <h1 className="text-xl font-semibold">opengolinks</h1>
       {error && (
         <p role="alert" className="mt-4 text-sm text-ember">
           {error}

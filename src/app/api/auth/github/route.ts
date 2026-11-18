@@ -4,7 +4,7 @@ import { currentHost, currentOrigin, isAdminHost } from "@/lib/host";
 
 export const dynamic = "force-dynamic";
 
-const STATE_COOKIE = "go_oauth_state"; // keep in sync with callback/route.ts
+const STATE_COOKIE = "opengolinks_oauth_state"; // keep in sync with callback/route.ts
 
 /** Starts the GitHub sign-in: sets a state cookie and redirects to GitHub. */
 export async function GET() {

@@ -5,7 +5,7 @@ import { matchUser } from "@/lib/users";
 
 export const dynamic = "force-dynamic";
 
-const STATE_COOKIE = "go_oauth_state";
+const STATE_COOKIE = "opengolinks_oauth_state";
 
 async function fail(message: string) {
   const url = new URL("/admin/login", await currentOrigin());
@@ -18,7 +18,7 @@ async function fail(message: string) {
 const ghHeaders = (token: string) => ({
   Authorization: `Bearer ${token}`,
   Accept: "application/vnd.github+json",
-  "User-Agent": "go-links",
+  "User-Agent": "opengolinks",
 });
 
 export async function GET(req: NextRequest) {
@@ -38,7 +38,7 @@ export async function GET(req: NextRequest) {
   try {
     const tokenRes = await fetch("https://github.com/login/oauth/access_token", {
       method: "POST",
-      headers: { Accept: "application/json", "Content-Type": "application/json", "User-Agent": "go-links" },
+      headers: { Accept: "application/json", "Content-Type": "application/json", "User-Agent": "opengolinks" },
       body: JSON.stringify({
         client_id: clientId,
         client_secret: clientSecret,

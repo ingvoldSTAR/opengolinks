@@ -57,7 +57,7 @@ export function probe(host: string, ip: string, port = 443): Promise<boolean> {
         path: "/api/ping",
         method: "GET",
         timeout: 5000,
-        headers: { "User-Agent": "go-links-domain-check" },
+        headers: { "User-Agent": "opengolinks-domain-check" },
         lookup: (_hostname, options, callback) => {
           const address = { address: ip, family: 4 };
           if ((options as { all?: boolean }).all) {
@@ -79,7 +79,7 @@ export function probe(host: string, ip: string, port = 443): Promise<boolean> {
           body += chunk;
           if (body.length > 64) res.destroy();
         });
-        res.on("close", () => resolve(body === "go-links"));
+        res.on("close", () => resolve(body === "opengolinks"));
         res.on("error", () => resolve(false));
       },
     );

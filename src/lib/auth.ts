@@ -4,7 +4,7 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 import { currentHost, isAdminHost } from "./host";
 import { userExists } from "./users";
 
-const COOKIE = "go_session";
+const COOKIE = "opengolinks_session";
 const MAX_AGE_SECONDS = 60 * 60 * 24 * 30;
 
 // Used only outside production, where a missing SESSION_SECRET is allowed with a warning at startup.

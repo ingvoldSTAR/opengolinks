@@ -9,7 +9,7 @@ interface Driver {
   exec(text: string): Promise<void>;
 }
 
-const g = globalThis as unknown as { __goDriver?: Promise<Driver> };
+const g = globalThis as unknown as { __opengolinksDriver?: Promise<Driver> };
 
 /** Env values pasted from a .env file often keep their surrounding quotes or whitespace. */
 function cleanEnv(value: string | undefined): string {
@@ -101,15 +101,15 @@ async function init(): Promise<Driver> {
 }
 
 function getDriver(): Promise<Driver> {
-  if (!g.__goDriver) {
-    g.__goDriver = init().catch((err) => {
+  if (!g.__opengolinksDriver) {
+    g.__opengolinksDriver = init().catch((err) => {
       // Shows up in the host's runtime logs, which is where a production 500 has to be diagnosed.
       console.error("[db] setup failed:", err instanceof Error ? err.message : err);
-      g.__goDriver = undefined;
+      g.__opengolinksDriver = undefined;
       throw err;
     });
   }
-  return g.__goDriver;
+  return g.__opengolinksDriver;
 }
 
 export async function query<T = Row>(text: string, params: unknown[] = []): Promise<T[]> {
