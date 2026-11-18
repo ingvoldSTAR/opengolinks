@@ -11,6 +11,7 @@ A small multi-domain link shortener with QR codes, link-in-bio galleries, UTM ta
 - **UTM builder.** Optional `utm_*` fields on each link, with a live preview. The values are added at redirect time, so the stored destination stays clean. A Campaigns page groups clicks by campaign and by source and medium.
 - **Click statistics.** Totals, a 30 day chart, referrers, countries and devices. Bots and link preview crawlers are excluded.
 - **Per-domain fallbacks.** A redirect for the bare domain and one for unknown slugs. New domains start with both pointing at the main website (`go.example.com` goes to `example.com`).
+- **Import.** Bring links in from a CSV file, or from an existing account through its API, with a preview before anything is saved. See [Importing links](#importing-links).
 - **Admin.** A single shared password at `/admin`, with optional GitHub sign-in for listed email addresses.
 
 ## Screenshots
@@ -61,6 +62,7 @@ Set these in `.env` locally, or in your host's environment settings. `.env.examp
 | `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET` | Enable "Continue with GitHub". | none | No |
 | `CNAME_TARGET` | Host shown as the CNAME value on the Domains page. | first `ADMIN_HOSTS` entry | No |
 | `TIMEZONE` | IANA time zone that decides where a day starts in the statistics, for example `Europe/London`. | `UTC` | No |
+| `REBRANDLY_API_BASE` | Test only: the base URL the Rebrandly importer calls, so tests can use a local fake. Leave it unset. | `https://api.rebrandly.com` | No |
 
 In production the server refuses to start (it prints what is wrong and exits) if `ADMIN_PASSWORD` or `SESSION_SECRET` is missing or too short. A missing `DATABASE_URL` makes the first request fail with a clear message in the logs.
 
@@ -84,6 +86,48 @@ Every domain serves the same links table, scoped by host. The admin area answers
 
 If you use GitHub sign-in, create an OAuth App with the callback URL `https://<admin host>/api/auth/github/callback`. GitHub allows one callback per app, so keep `ADMIN_HOSTS` to the host that callback points at. Sign-in only works for verified GitHub emails that match a row in the `users` table.
 
+## Importing links
+
+Admin, Import brings existing links in from a CSV file or from Rebrandly. Both sources follow the same rules:
+
+- **Preview first.** "Preview only" is ticked by default. A preview reads everything and applies the rules, then reports what would happen and saves nothing. Check the report, then untick the box and import.
+- **Domains must be added first.** Each domain has to be on the Domains page. Links on any other domain are not imported, and the report says which.
+- **Safe to run again.** A link whose domain and slug already exist is never changed or duplicated. If it exists with a different destination, it is listed and left alone.
+- **Slugs are lower-cased.** Slugs this app does not support (other characters, over 64 characters, reserved words), entries that differ only by capital letters, slugs a gallery already uses, and destinations that are not http or https are listed as skipped.
+- **Links keep their domain and slug**, so printed QR codes keep working once the domain's DNS points here. Import before switching a domain's DNS.
+- **Click history does not come across.** Statistics start from zero for imported links.
+
+### Importing from a CSV file
+
+The first row names the columns. Commas and semicolons both work as separators, and the file should be UTF-8.
+
+| Column | Required | Notes |
+| --- | --- | --- |
+| `domain` | Yes | A domain already added on the Domains page. |
+| `slug` | Yes | Letters, numbers, hyphens and underscores, up to 64 characters. |
+| `destination` | Yes | A full `http://` or `https://` address. |
+| `title` | No | |
+| `utm_source`, `utm_medium`, `utm_campaign`, `utm_term`, `utm_content` | No | Saved as the link's campaign fields, in lower case. |
+
+```csv
+domain,slug,destination,title,utm_source,utm_medium,utm_campaign
+go.example.com,spring,https://example.com/spring-sale,Spring sale,newsletter,email,spring-launch
+```
+
+- Other columns are ignored, and the report names them. Blank rows are skipped, and the row numbers in the report match the row numbers in a spreadsheet.
+- A file may be up to 1 MB or 20,000 rows. Links are saved in batches of 100. A file over either limit is refused with a message and nothing is imported, so split it and import the parts one at a time.
+- The file is read for that request and is not kept.
+
+### Importing from Rebrandly
+
+Paste a Rebrandly API key. A key covers one workspace, so repeat the import with each workspace's key, adding the workspace ID if it is not the key's default.
+
+- **The key is used once and never stored.** It is sent to Rebrandly for that request only, and it is not saved or logged.
+- `utm_` values in a destination can be moved into the campaign fields (on by default, saved in lower case).
+- Title and creation date are kept. A note on each link records where it came from and Rebrandly's click total.
+- Rebrandly's documentation disagrees on the page size (25 or 100), so the importer asks for 100 and falls back to 25. It stops at 20,000 links; run it again once that batch is imported.
+- The importer has been run against the real Rebrandly API. `REBRANDLY_API_BASE` exists only so tests can point it at a local fake. Leave it unset.
+
 ## How it works
 
 - **Redirects** use 302 by default so edits take effect immediately. 301 is available per link, but browsers cache it.
@@ -102,7 +146,7 @@ This is a reference build. Know what it does not do before you run it.
 - **Login throttling is simple.** The per-client count keys on the last `X-Forwarded-For` entry. If your proxy does not set that header, every client shares one key, and the overall limit is what protects you. Someone hammering the form can use up the overall allowance and block password sign-in for up to 15 minutes.
 - **No automated tests.** Behaviour has been checked by hand.
 - **Country needs a proxy header** (see above).
-- **Outbound requests.** The Domains page makes a DNS lookup and an HTTPS request to each domain an admin adds, to show its status.
+- **Outbound requests.** The Domains page makes a DNS lookup and an HTTPS request to each domain an admin adds, to show its status. The Rebrandly importer sends the API key you give it to `api.rebrandly.com` for the duration of one import.
 - **No limit on public traffic.** Every visit to a short link or gallery writes one row, and nothing rate-limits that. Put a rate limit in front if the domain is exposed to untrusted traffic.
 - **Click logging** runs after the redirect and is best effort. A failed write is logged and the visitor is still redirected.
 

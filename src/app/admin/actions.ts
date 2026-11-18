@@ -5,12 +5,16 @@ import { notFound, redirect } from "next/navigation";
 import { checkPassword, endSession, requireAdmin, startSession } from "@/lib/auth";
 import { currentHost, isAdminHost } from "@/lib/host";
 import { loginSucceeded, startLoginAttempt } from "@/lib/ratelimit";
+import { CSV_MAX_BYTES, csvRecords } from "@/lib/csv";
+import { planImport, type ImportRecord } from "@/lib/import";
 import {
   SlugTakenError,
   createDomain,
   createLink,
   deleteDomain,
   deleteLink,
+  existingLinkMap,
+  importLinks,
   listDomains,
   updateDomain,
   updateLink,
@@ -37,6 +41,7 @@ import {
   type ButtonStyle,
   type ItemKind,
 } from "@/lib/gallery-render";
+import { RebrandlyError, fetchAllLinks, rebrandlyRecords } from "@/lib/rebrandly";
 import { UTM_KEYS, cleanUtmValue, type Utm } from "@/lib/utm";
 import {
   apexUrl,
@@ -169,6 +174,118 @@ export async function deleteDomainAction(_prev: State, fd: FormData): Promise<St
   }
   revalidatePath("/admin/domains");
   return { ok: "Removed." };
+}
+
+/* ---------- Import ---------- */
+
+const SHOW_LIMIT = 40;
+const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
+
+/**
+ * Plans the records and, unless it is a preview, saves them. Every import source ends here, so they follow
+ * the same rules and report the same way. `lead` opens the report, for example "Rebrandly returned 12 links".
+ */
+async function runImport(args: {
+  lead: string;
+  records: ImportRecord[];
+  liftUtm: boolean;
+  dryRun: boolean;
+  notes?: string[];
+}): Promise<State> {
+  const { lead, records, liftUtm, dryRun, notes = [] } = args;
+
+  let plan: ReturnType<typeof planImport>;
+  let created: number;
+  try {
+    const domains = new Map((await listDomains()).map((d) => [d.host, d.id]));
+    plan = planImport(records, domains, await existingLinkMap(), { liftUtm });
+    created = dryRun ? plan.create.length : await importLinks(plan.create);
+  } catch (e) {
+    // Without this, a database or data problem surfaces as a bare 500 and a crashed form.
+    const reason = e instanceof Error ? e.message : "unknown error";
+    console.error("[import] database step failed:", reason);
+    return {
+      error: `${lead}, but they could not be ${dryRun ? "checked" : "saved"}: ${reason.slice(0, 200)}. Links saved before the problem are kept, and running the import again is safe.`,
+    };
+  }
+  if (!dryRun) {
+    revalidatePath("/admin");
+    revalidatePath("/admin/campaigns");
+  }
+
+  const perDomain = new Map<string, number>();
+  for (const l of plan.create) perDomain.set(l.host, (perDomain.get(l.host) ?? 0) + 1);
+
+  const details: string[] = [`${lead}.`, ...notes];
+  for (const [host, n] of perDomain) details.push(`${host}: ${n} ${dryRun ? "to import" : "imported"}`);
+  if (plan.alreadyThere) details.push(`${plan.alreadyThere} already here with the same destination (skipped).`);
+  if (plan.utmLifted) details.push(`${plan.utmLifted} had utm_ values in the destination, moved to the campaign fields.`);
+  for (const [host, n] of plan.unknownDomains) {
+    details.push(`${n} on ${host}: not imported, because that domain is not added here. Add it on the Domains page, then run this again.`);
+  }
+  for (const s of plan.skipped.slice(0, SHOW_LIMIT)) details.push(`${s.link}: skipped, ${s.reason}.`);
+  if (plan.skipped.length > SHOW_LIMIT) details.push(`...and ${plan.skipped.length - SHOW_LIMIT} more skipped.`);
+
+  return dryRun
+    ? { ok: `Preview only: ${plural(created, "link", "links")} would be imported. Untick "Preview only" and press Import to do it.`, details }
+    : { ok: `Imported ${plural(created, "link", "links")}.`, details };
+}
+
+/** One-off import of an existing Rebrandly workspace. The API key is used for this request only and never stored. */
+export async function importRebrandlyAction(_prev: State, fd: FormData): Promise<State> {
+  await requireAdmin();
+
+  const apiKey = text(fd, "api_key");
+  if (!apiKey) return { error: "Paste your Rebrandly API key." };
+  const workspace = text(fd, "workspace") || null;
+  const dryRun = fd.get("dry_run") === "on";
+  const liftUtm = fd.get("lift_utm") === "on";
+
+  let fetched;
+  try {
+    fetched = await fetchAllLinks(apiKey, workspace);
+  } catch (e) {
+    if (e instanceof RebrandlyError) return { error: e.message };
+    console.error("[import] unexpected failure:", e instanceof Error ? e.message : "unknown");
+    return { error: "The import failed unexpectedly. Check the server logs." };
+  }
+
+  return runImport({
+    lead: `Rebrandly returned ${plural(fetched.links.length, "link", "links")}`,
+    records: rebrandlyRecords(fetched.links),
+    liftUtm,
+    dryRun,
+    notes: fetched.truncated ? ["Stopped at 20,000 links. Run it again after this batch is imported."] : [],
+  });
+}
+
+/** Import from an uploaded CSV file (see csv.ts for the columns). Nothing is stored apart from the links themselves. */
+export async function importCsvAction(_prev: State, fd: FormData): Promise<State> {
+  await requireAdmin();
+
+  const file = fd.get("csv_file");
+  if (!(file instanceof File) || file.size === 0) return { error: "Choose a CSV file." };
+  if (file.size > CSV_MAX_BYTES) {
+    return { error: `That file is over ${CSV_MAX_BYTES / 1_000_000} MB. Split it into smaller files and import them one at a time.` };
+  }
+  const dryRun = fd.get("dry_run") === "on";
+
+  let parsed: ReturnType<typeof csvRecords>;
+  try {
+    parsed = csvRecords(await file.text());
+  } catch (e) {
+    console.error("[import] could not read the CSV file:", e instanceof Error ? e.message : "unknown");
+    return { error: "That file could not be read. Save it as a CSV file in UTF-8 and try again." };
+  }
+  if (!parsed.ok) return { error: parsed.error };
+
+  return runImport({
+    lead: `The file has ${plural(parsed.records.length, "row", "rows")}`,
+    records: parsed.records,
+    liftUtm: false,
+    dryRun,
+    notes: parsed.ignoredColumns.length > 0 ? [`Ignored columns: ${parsed.ignoredColumns.join(", ")}.`] : [],
+  });
 }
 
 /* ---------- Galleries (link-in-bio pages) ---------- */
