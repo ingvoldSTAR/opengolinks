@@ -7,11 +7,11 @@
   "author": "Erik Ingvoldstad",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/ingvoldSTAR/go-links.git"
+    "url": "git+https://github.com/ingvoldSTAR/opengolinks.git"
   },
-  "homepage": "https://github.com/ingvoldSTAR/go-links",
+  "homepage": "https://github.com/ingvoldSTAR/opengolinks",
   "bugs": {
-    "url": "https://github.com/ingvoldSTAR/go-links/issues"
+    "url": "https://github.com/ingvoldSTAR/opengolinks/issues"
   },
   "engines": {
     "node": ">=22"
