@@ -90,8 +90,7 @@ If you use GitHub sign-in, create an OAuth App with the callback URL `https://<a
 - **UTM values** are lower-cased with hyphens for spaces, limited to 100 characters and URL-encoded. A link's own values replace any `utm_` values already in the destination, other query parameters keep their exact encoding, and a `#fragment` is kept.
 - **Gallery pages** are plain HTML with no scripts, served with a strict Content-Security-Policy. Addresses, colours and images are checked on save and again when rendering, so only `http(s)` links, `mailto:`, hex colours, https or small data images (uploads are limited to 250 KB) and YouTube embeds can reach the page. Button clicks go through `/<gallery slug>/<item id>`, which records the click and redirects. A gallery and a link cannot share a slug on one domain.
 - **Slugs** are stored lower case and matched case-insensitively. Reserved: `admin`, `api`, `login`, `logout`, `robots.txt`, `sitemap.xml`, `favicon.ico`.
-- **Country** comes from the `x-vercel-ip-country` or `cf-ipcountry` header. On other hosts it shows as Unknown unless a proxy in front sets one of those headers.
-- **Security headers.** `/admin` and `/api` send `X-Content-Type-Options`, `Referrer-Policy` and `X-Frame-Options: DENY` (the gallery preview, which the admin area embeds, allows framing by the same site only).
+- **Country** comes from the `x-vercel-ip-country` or `cf-ipcountry` header, and only a two-letter code is stored. On other hosts it shows as Unknown unless a proxy in front sets one of those headers. Without such a proxy, any client can send the header, so treat country figures as unreliable there.- **Security headers.** `/admin` and `/api` send `X-Content-Type-Options`, `Referrer-Policy` and `X-Frame-Options: DENY` (the gallery preview, which the admin area embeds, allows framing by the same site only).
 - **Login throttling.** Password attempts are counted in the database before the password is checked: 5 per client and 40 in total per 15 minutes, after which the form refuses attempts until the window passes. The count survives restarts and is shared between instances. A wrong password also has a short delay.
 
 ## Limitations
@@ -104,6 +103,7 @@ This is a reference build. Know what it does not do before you run it.
 - **No automated tests.** Behaviour has been checked by hand.
 - **Country needs a proxy header** (see above).
 - **Outbound requests.** The Domains page makes a DNS lookup and an HTTPS request to each domain an admin adds, to show its status.
+- **No limit on public traffic.** Every visit to a short link or gallery writes one row, and nothing rate-limits that. Put a rate limit in front if the domain is exposed to untrusted traffic.
 - **Click logging** runs after the redirect and is best effort. A failed write is logged and the visitor is still redirected.
 
 ## Support

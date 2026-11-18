@@ -2,13 +2,13 @@ import { after, NextResponse, type NextRequest } from "next/server";
 import { findGallery, listItems, recordGalleryEvent } from "@/lib/galleries";
 import { GALLERY_CSP, renderGalleryHtml } from "@/lib/gallery-render";
 import { hostFromHeaders } from "@/lib/host";
-import { findDomain, recordClick, resolveLink } from "@/lib/links";
+import { countryFromHeaders, findDomain, recordClick, resolveLink } from "@/lib/links";
 import { withUtm } from "@/lib/utm";
 
 export async function GET(req: NextRequest, ctx: { params: Promise<{ slug: string }> }) {
   const { slug } = await ctx.params;
   const host = hostFromHeaders(req.headers);
-  const country = req.headers.get("x-vercel-ip-country") ?? req.headers.get("cf-ipcountry");
+  const country = countryFromHeaders(req.headers);
   const via = req.nextUrl.searchParams.get("qr") === "1" ? "qr" : null;
 
   const link = await resolveLink(host, slug.toLowerCase());

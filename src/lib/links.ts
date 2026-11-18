@@ -192,10 +192,22 @@ export function deviceFromUserAgent(ua: string | null): string {
 export function referrerHost(referrer: string | null): string | null {
   if (!referrer) return null;
   try {
-    return new URL(referrer).host.toLowerCase().replace(/^www\./, "") || null;
+    const host = new URL(referrer).host.toLowerCase().replace(/^www\./, "");
+    // A hostname is at most 253 characters (plus a port); anything longer is junk and is not stored.
+    return host && host.length <= 260 ? host : null;
   } catch {
     return null;
   }
+}
+
+/**
+ * The visitor's country from the host's geo header: Vercel's or Cloudflare's. Any client can send these
+ * headers when nothing in front of the app strips them, so only a two-letter ISO code is accepted;
+ * anything else (including Cloudflare's "XX" for unknown) is stored as no country.
+ */
+export function countryFromHeaders(h: { get(name: string): string | null }): string | null {
+  const value = (h.get("x-vercel-ip-country") ?? h.get("cf-ipcountry") ?? "").trim().toUpperCase();
+  return /^[A-Z]{2}$/.test(value) && value !== "XX" ? value : null;
 }
 
 export async function recordClick(
