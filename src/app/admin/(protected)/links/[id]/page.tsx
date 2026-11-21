@@ -9,6 +9,7 @@ import { DailyBars } from "@/components/DailyBars";
 import { QrPanel } from "@/components/QrPanel";
 import { UtmFields } from "@/components/UtmFields";
 import { clicksByDay, getLink, qrScanCounts, topCountries, topDevices, topReferrers, type LabelCount } from "@/lib/links";
+import { getQrColours } from "@/lib/qrColours";
 import { qrTarget, shortUrl } from "@/lib/url";
 import { deleteLinkAction, updateLinkAction } from "../../../actions";
 
@@ -41,12 +42,13 @@ export default async function LinkPage({
   const link = Number.isInteger(Number(id)) ? await getLink(Number(id)) : null;
   if (!link) notFound();
 
-  const [days, refs, countries, devices, scans] = await Promise.all([
+  const [days, refs, countries, devices, scans, qrColours] = await Promise.all([
     clicksByDay(link.id),
     topReferrers(link.id),
     topCountries(link.id),
     topDevices(link.id),
     qrScanCounts(link.id),
+    getQrColours("link", link.id),
   ]);
   const url = shortUrl(link.host, link.slug);
 
@@ -117,7 +119,7 @@ export default async function LinkPage({
         </div>
 
         <div className="space-y-6">
-          <QrPanel id={link.id} target={qrTarget(link.host, link.slug)} />
+          <QrPanel id={link.id} target={qrTarget(link.host, link.slug)} kind="link" host={link.host} initial={qrColours} />
 
           <section className="card p-5">
             <div className="flex items-baseline justify-between">

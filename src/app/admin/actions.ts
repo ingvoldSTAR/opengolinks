@@ -6,6 +6,7 @@ import { notFound, redirect } from "next/navigation";
 import { checkPassword, endSession, requireAdmin, startSession } from "@/lib/auth";
 import { currentHost, isAdminHost } from "@/lib/host";
 import { refreshFavicon } from "@/lib/favicon";
+import { cleanDark, cleanLight, saveQrColours, type QrKind } from "@/lib/qrColours";
 import { loginSucceeded, startLoginAttempt } from "@/lib/ratelimit";
 import { CSV_MAX_BYTES, csvRecords } from "@/lib/csv";
 import { planImport, type ImportRecord } from "@/lib/import";
@@ -154,6 +155,16 @@ export async function addDomainAction(_prev: State, fd: FormData): Promise<State
   }
   revalidatePath("/admin/domains");
   return { ok: apexUrl(host.value) ? `${host.value} added. Visitors without a valid short link go to ${apexUrl(host.value)}.` : `${host.value} added.` };
+}
+
+/** Saves QR colours for a link or gallery, optionally for every QR code on its domain. */
+export async function saveQrColoursAction(kind: QrKind, id: number, dark: string, light: string, applyToDomain: boolean): Promise<State> {
+  await requireAdmin();
+  if ((kind !== "link" && kind !== "gallery") || !Number.isInteger(id)) return { error: "Unknown QR code." };
+  const saved = await saveQrColours(kind, id, cleanDark(dark), cleanLight(light), applyToDomain === true);
+  if (!saved) return { error: "That item no longer exists." };
+  revalidatePath("/admin", "layout");
+  return { ok: applyToDomain ? `Saved for every QR code on ${saved.host}.` : "Saved for this QR code only." };
 }
 
 export async function refreshFaviconAction(_prev: State, fd: FormData): Promise<State> {

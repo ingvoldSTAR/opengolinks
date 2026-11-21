@@ -121,3 +121,11 @@ begin
     update domains set went_live_at = now();
   end if;
 end $$;
+
+-- QR code colours: a default per domain, and an optional override on a single link or gallery.
+alter table domains   add column if not exists qr_dark  text;
+alter table domains   add column if not exists qr_light text;
+alter table links     add column if not exists qr_dark  text;
+alter table links     add column if not exists qr_light text;
+alter table galleries add column if not exists qr_dark  text;
+alter table galleries add column if not exists qr_light text;

@@ -1,7 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useTransition } from "react";
+import { saveQrColoursAction } from "@/app/admin/actions";
 import { inputClass, labelClass } from "./styles";
+
+export type QrSaved = { dark: string; light: string; source: "own" | "domain" | "default" };
 
 type Background = "white" | "transparent" | "custom";
 
@@ -25,14 +28,48 @@ const CHECKERBOARD = {
   backgroundPosition: "0 0,0 8px,8px -8px,-8px 0",
 } as const;
 
-export function QrPanel({ id, target, base: baseOverride }: { id: number; target: string; base?: string }) {
+const smallButton = "rounded-lg px-3.5 py-2 text-sm font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-50";
+
+export function QrPanel({
+  id,
+  target,
+  base: baseOverride,
+  kind,
+  host,
+  initial,
+}: {
+  id: number;
+  target: string;
+  base?: string;
+  kind: "link" | "gallery";
+  host: string;
+  initial: QrSaved;
+}) {
   const [size, setSize] = useState("1024");
   const [ec, setEc] = useState("Q");
-  const [dark, setDark] = useState("#000000");
-  const [bg, setBg] = useState<Background>("white");
-  const [custom, setCustom] = useState("#ffffff");
+  const [saved, setSaved] = useState<QrSaved>(initial);
+  const [dark, setDark] = useState(initial.dark);
+  const [bg, setBg] = useState<Background>(initial.light === "transparent" ? "transparent" : initial.light === "#ffffff" ? "white" : "custom");
+  const [custom, setCustom] = useState(initial.light.startsWith("#") ? initial.light : "#ffffff");
+  const [asking, setAsking] = useState(false);
+  const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
+  const [pending, startSave] = useTransition();
 
   const light = bg === "transparent" ? "transparent" : bg === "custom" ? custom : "#ffffff";
+  const dirty = dark.toLowerCase() !== saved.dark || light.toLowerCase() !== saved.light;
+
+  const save = (applyToDomain: boolean) =>
+    startSave(async () => {
+      const result = await saveQrColoursAction(kind, id, dark, light, applyToDomain);
+      if (result?.error) {
+        setMessage({ ok: false, text: result.error });
+      } else {
+        setSaved({ dark: dark.toLowerCase(), light: light.toLowerCase(), source: applyToDomain ? "domain" : "own" });
+        setMessage({ ok: true, text: result?.ok ?? "Saved." });
+      }
+      setAsking(false);
+    });
+
   const bgColour = bg === "custom" ? custom : "#ffffff";
   const warning =
     bg === "transparent"
@@ -123,6 +160,69 @@ export function QrPanel({ id, target, base: baseOverride }: { id: number; target
             : "Keep the code dark on a light background so phones scan it reliably."}
         </p>
       )}
+
+      <div className="mt-4 rounded-xl bg-ground p-4">
+        {asking ? (
+          <div role="group" aria-labelledby="qr-ask">
+            <p id="qr-ask" className="text-sm font-bold">Use these colours for every QR code on {host}?</p>
+            <p className="mt-1 text-xs text-mute">
+              Yes sets them for the whole domain and replaces any individual colours. No keeps them for this QR code only.
+            </p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <button
+                type="button"
+                disabled={pending}
+                onClick={() => save(true)}
+                className={`${smallButton} bg-accent text-white hover:bg-accent-deep`}
+              >
+                Yes, all on {host}
+              </button>
+              <button
+                type="button"
+                disabled={pending}
+                onClick={() => save(false)}
+                className={`${smallButton} border border-line bg-white hover:border-accent hover:text-accent-deep`}
+              >
+                No, just this one
+              </button>
+              <button
+                type="button"
+                disabled={pending}
+                onClick={() => setAsking(false)}
+                className={`${smallButton} text-ink/75 hover:bg-white hover:text-ink`}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <p className="text-xs text-mute">
+              {dirty
+                ? "You have unsaved colour changes."
+                : saved.source === "domain"
+                  ? `These are the colours saved for ${host}.`
+                  : saved.source === "own"
+                    ? "This QR code has its own saved colours."
+                    : "Colours are not saved yet."}
+            </p>
+            <button
+              type="button"
+              disabled={!dirty}
+              onClick={() => {
+                setMessage(null);
+                setAsking(true);
+              }}
+              className={`${smallButton} bg-ink text-white hover:bg-accent-deep`}
+            >
+              Save colours
+            </button>
+          </div>
+        )}
+        {message && (
+          <p role="status" className={`mt-3 text-xs font-semibold ${message.ok ? "text-ok" : "text-danger-ink"}`}>{message.text}</p>
+        )}
+      </div>
 
       <div className="mt-4 flex gap-2">
         <a

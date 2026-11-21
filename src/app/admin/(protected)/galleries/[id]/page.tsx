@@ -14,6 +14,7 @@ import { ThemeFields } from "@/components/ThemeFields";
 import { galleryStats, galleryViewsByDay, getGallery, itemClickCounts, listItems, type ItemClicks } from "@/lib/galleries";
 import { NETWORKS, NETWORK_LABELS } from "@/lib/gallery-icons";
 import { safeImageSrc, type ItemRow } from "@/lib/gallery-render";
+import { getQrColours } from "@/lib/qrColours";
 import { qrTarget, shortUrl } from "@/lib/url";
 import {
   deleteGalleryAction,
@@ -133,11 +134,12 @@ export default async function GalleryPage({ params }: { params: Promise<{ id: st
   const gallery = Number.isInteger(Number(id)) ? await getGallery(Number(id)) : null;
   if (!gallery) notFound();
 
-  const [items, stats, days, clicks] = await Promise.all([
+  const [items, stats, days, clicks, qrColours] = await Promise.all([
     listItems(gallery.id),
     galleryStats(gallery.id),
     galleryViewsByDay(gallery.id),
     itemClickCounts(gallery.id),
+    getQrColours("gallery", gallery.id),
   ]);
   const clickMap = new Map(clicks.filter((c) => c.item_id !== null).map((c) => [c.item_id as number, c]));
   const removed = clicks.find((c) => c.item_id === null);
@@ -293,7 +295,7 @@ export default async function GalleryPage({ params }: { params: Promise<{ id: st
             <p className="mt-4 text-xs text-mute">Bots and link previews are not counted. Days follow {appTimezone()} time.</p>
           </section>
 
-          <QrPanel id={gallery.id} target={qrTarget(gallery.host, gallery.slug)} base={`/api/galleries/${gallery.id}/qr`} />
+          <QrPanel id={gallery.id} target={qrTarget(gallery.host, gallery.slug)} base={`/api/galleries/${gallery.id}/qr`} kind="gallery" host={gallery.host} initial={qrColours} />
         </div>
       </div>
     </div>
