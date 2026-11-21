@@ -5,13 +5,13 @@ import { SlugTakenError, deviceFromUserAgent, referrerHost, type DayCount } from
 
 export type GalleryListRow = GalleryRow & { item_count: number; views_total: number; clicks_total: number };
 
-const SELECT = `select g.*, d.host from galleries g join domains d on d.id = g.domain_id`;
+const SELECT = `select g.*, d.host, (d.favicon_data is not null) as has_icon from galleries g join domains d on d.id = g.domain_id`;
 
 /* ---------- Galleries ---------- */
 
 export async function listGalleries(): Promise<GalleryListRow[]> {
   return query<GalleryListRow>(
-    `select g.*, d.host,
+    `select g.*, d.host, (d.favicon_data is not null) as has_icon,
             (select count(*)::int from gallery_items i where i.gallery_id = g.id) as item_count,
             (select count(*)::int from gallery_events e where e.gallery_id = g.id and e.kind = 'view' and e.device <> 'bot') as views_total,
             (select count(*)::int from gallery_events e where e.gallery_id = g.id and e.kind = 'click' and e.device <> 'bot') as clicks_total

@@ -3,7 +3,8 @@
 import { useState } from "react";
 import { addItemAction } from "@/app/admin/actions";
 import { NETWORKS, NETWORK_LABELS } from "@/lib/gallery-icons";
-import { ActionForm, SubmitButton, inputClass, labelClass } from "./forms";
+import { ActionForm, SubmitButton } from "./forms";
+import { inputClass, labelClass } from "./styles";
 
 type Kind = "link" | "social" | "image" | "video";
 
@@ -20,16 +21,16 @@ export function AddItemForm({ galleryId }: { galleryId: number }) {
   const help = KINDS.find((k) => k.value === kind)?.help;
 
   return (
-    <ActionForm action={addItemAction} className="mt-4 space-y-4" onOk={() => setNonce((n) => n + 1)}>
+    <ActionForm action={addItemAction} className="space-y-4" onOk={() => setNonce((n) => n + 1)}>
       <input type="hidden" name="gallery_id" value={galleryId} />
       <div className="max-w-xs">
-        <label htmlFor="kind" className={labelClass}>Add</label>
+        <label htmlFor="kind" className={labelClass}>What to add</label>
         <select id="kind" name="kind" value={kind} onChange={(e) => setKind(e.target.value as Kind)} className={inputClass}>
           {KINDS.map((k) => (
             <option key={k.value} value={k.value}>{k.label}</option>
           ))}
         </select>
-        <p className="mt-1 text-xs text-licorice/60">{help}</p>
+        <p className="mt-1 text-xs text-mute">{help}</p>
       </div>
 
       <div key={nonce} className="grid gap-4 md:grid-cols-2">

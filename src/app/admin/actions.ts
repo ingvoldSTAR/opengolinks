@@ -1,9 +1,11 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { after } from "next/server";
 import { notFound, redirect } from "next/navigation";
 import { checkPassword, endSession, requireAdmin, startSession } from "@/lib/auth";
 import { currentHost, isAdminHost } from "@/lib/host";
+import { refreshFavicon } from "@/lib/favicon";
 import { loginSucceeded, startLoginAttempt } from "@/lib/ratelimit";
 import { CSV_MAX_BYTES, csvRecords } from "@/lib/csv";
 import { planImport, type ImportRecord } from "@/lib/import";
@@ -110,7 +112,7 @@ export async function createLinkAction(_prev: State, fd: FormData): Promise<Stat
     throw e;
   }
   revalidatePath("/admin");
-  redirect(`/admin/links/${id}`);
+  redirect(`/admin/links/${id}?created=1`);
 }
 
 export async function updateLinkAction(_prev: State, fd: FormData): Promise<State> {
@@ -144,13 +146,29 @@ export async function addDomainAction(_prev: State, fd: FormData): Promise<State
   try {
     // New domains send visitors with no (or a wrong) short link to the main website. Editable on the Domains page.
     const home = apexUrl(host.value);
-    await createDomain(host.value, home, home);
+    const id = await createDomain(host.value, home, home);
+    after(() => refreshFavicon(id, host.value).catch((e) => console.error("[favicon]", host.value, e instanceof Error ? e.message : e)));
   } catch (e) {
     if (code(e) === "23505") return { error: "That domain is already added." };
     throw e;
   }
   revalidatePath("/admin/domains");
   return { ok: apexUrl(host.value) ? `${host.value} added. Visitors without a valid short link go to ${apexUrl(host.value)}.` : `${host.value} added.` };
+}
+
+export async function refreshFaviconAction(_prev: State, fd: FormData): Promise<State> {
+  await requireAdmin();
+  const id = Number(fd.get("id"));
+  const domain = (await listDomains()).find((d) => d.id === id);
+  if (!domain) return { error: "That domain no longer exists." };
+  const trace: string[] = [];
+  const found = await refreshFavicon(domain.id, domain.host, trace);
+  revalidatePath("/admin", "layout");
+  if (found) return { ok: "Icon updated." };
+  console.error("[favicon]", domain.host, trace.join(" | "));
+  return {
+    error: `No icon found for ${domain.host}. The monogram stays. What the server saw: ${trace.slice(0, 4).join("; ") || "no page or icon link found"}.`,
+  };
 }
 
 export async function updateDomainAction(_prev: State, fd: FormData): Promise<State> {

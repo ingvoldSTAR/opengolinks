@@ -10,6 +10,9 @@ export type Domain = {
   root_redirect_url: string | null;
   not_found_url: string | null;
   created_at: Date;
+  has_icon: boolean;
+  favicon_checked_at: Date | null;
+  went_live_at: Date | null;
   link_count: number;
   gallery_count: number;
 };
@@ -27,6 +30,7 @@ export type LinkRow = {
   updated_at: Date;
   clicks_total: number;
   clicks_7d: number;
+  has_icon: boolean;
 } & Utm;
 
 export type CampaignRow = {
@@ -43,24 +47,39 @@ export type LabelCount = { label: string; n: number };
 
 /* ---------- Domains ---------- */
 
+// Not d.*: the icon bytes stay out of ordinary queries.
+const DOMAIN_COLUMNS = `d.id, d.host, d.root_redirect_url, d.not_found_url, d.created_at,
+  (d.favicon_data is not null) as has_icon, d.favicon_checked_at, d.went_live_at`;
+
 export async function listDomains(): Promise<Domain[]> {
   return query<Domain>(
-    `select d.*, (select count(*)::int from links l where l.domain_id = d.id) as link_count,
+    `select ${DOMAIN_COLUMNS}, (select count(*)::int from links l where l.domain_id = d.id) as link_count,
             (select count(*)::int from galleries g where g.domain_id = d.id) as gallery_count
-       from domains d order by d.host`,
+       from domains d
+      -- Domains still being set up first (newest first), then the live ones A to Z.
+      order by (d.went_live_at is null) desc, (case when d.went_live_at is null then d.created_at end) desc, d.host`,
   );
+}
+
+/** Records that a domain has answered as live, so it takes its place in the alphabetical list. */
+export async function markDomainLive(id: number): Promise<void> {
+  await query(`update domains set went_live_at = now() where id = $1 and went_live_at is null`, [id]);
 }
 
 export async function findDomain(host: string): Promise<Domain | null> {
   const rows = await query<Domain>(
-    `select d.*, 0 as link_count, 0 as gallery_count from domains d where d.host = $1`,
+    `select ${DOMAIN_COLUMNS}, 0 as link_count, 0 as gallery_count from domains d where d.host = $1`,
     [host],
   );
   return rows[0] ?? null;
 }
 
-export async function createDomain(host: string, rootRedirect: string | null, notFound: string | null): Promise<void> {
-  await query(`insert into domains (host, root_redirect_url, not_found_url) values ($1, $2, $3)`, [host, rootRedirect, notFound]);
+export async function createDomain(host: string, rootRedirect: string | null, notFound: string | null): Promise<number> {
+  const rows = await query<{ id: number }>(
+    `insert into domains (host, root_redirect_url, not_found_url) values ($1, $2, $3) returning id`,
+    [host, rootRedirect, notFound],
+  );
+  return rows[0].id;
 }
 
 export async function updateDomain(
@@ -81,7 +100,7 @@ export async function deleteDomain(id: number): Promise<void> {
 /* ---------- Links ---------- */
 
 const LINK_SELECT = `
-  select l.*, d.host,
+  select l.*, d.host, (d.favicon_data is not null) as has_icon,
     (select count(*)::int from clicks c
        where c.link_id = l.id and c.device <> 'bot') as clicks_total,
     (select count(*)::int from clicks c
@@ -363,4 +382,46 @@ export async function importLinks(rows: ImportRow[]): Promise<number> {
     created += inserted.length;
   }
   return created;
+}
+
+/** Clicks per day for the last 7 days (oldest first) for each given link, for the small trend in the table. */
+export async function weeklyTrends(linkIds: number[]): Promise<Map<number, number[]>> {
+  const result = new Map<number, number[]>();
+  if (linkIds.length === 0) return result;
+  const days: string[] = [];
+  for (let i = 6; i >= 0; i--) {
+    days.push(new Date(Date.now() - i * 86_400_000).toLocaleDateString("en-CA", { timeZone: appTimezone() }));
+  }
+  const rows = await query<{ link_id: number; day: string; n: number }>(
+    `select link_id, to_char(date_trunc('day', clicked_at at time zone $2::text), 'YYYY-MM-DD') as day, count(*)::int as n
+       from clicks
+      where link_id = any($1::int[]) and device <> 'bot' and clicked_at > now() - interval '8 days'
+      group by 1, 2`,
+    [linkIds, appTimezone()],
+  );
+  for (const id of linkIds) result.set(id, days.map(() => 0));
+  for (const r of rows) {
+    const i = days.indexOf(r.day);
+    if (i >= 0) result.get(Number(r.link_id))![i] = Number(r.n);
+  }
+  return result;
+}
+
+/* ---------- Domain icons ---------- */
+
+export async function saveFavicon(id: number, icon: { data: Buffer; type: string } | null): Promise<void> {
+  await query(
+    `update domains set favicon_data = coalesce($2, favicon_data), favicon_type = coalesce($3, favicon_type), favicon_checked_at = now() where id = $1`,
+    [id, icon?.data ?? null, icon?.type ?? null],
+  );
+}
+
+export async function getFavicon(id: number): Promise<{ data: Buffer; type: string; version: number } | null> {
+  const rows = await query<{ favicon_data: Buffer | null; favicon_type: string | null; v: number }>(
+    `select favicon_data, favicon_type, extract(epoch from favicon_checked_at)::bigint as v from domains where id = $1`,
+    [id],
+  );
+  const r = rows[0];
+  if (!r?.favicon_data || !r.favicon_type) return null;
+  return { data: Buffer.from(r.favicon_data), type: r.favicon_type, version: Number(r.v) };
 }

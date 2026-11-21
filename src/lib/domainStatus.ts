@@ -29,7 +29,7 @@ function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
 }
 
 /** Public, routable IPv4 only. Keeps this check from making the server contact internal addresses. */
-function isPublicIPv4(ip: string): boolean {
+export function isPublicIPv4(ip: string): boolean {
   const [a, b] = ip.split(".").map(Number);
   if ([a, b].some((n) => Number.isNaN(n))) return false;
   if (a === 0 || a === 10 || a === 127 || a >= 224) return false;
