@@ -1,10 +1,14 @@
+import { DomainKey } from "@/components/DomainTag";
+import { DrawerButton } from "@/components/Drawer";
+import { PlusIcon } from "@/components/Icons";
 import Link from "next/link";
 import { appTimezone } from "@/lib/timezone";
 import { notFound } from "next/navigation";
 import { AddItemForm } from "@/components/AddItemForm";
 import { CopyButton } from "@/components/CopyButton";
 import { DailyBars } from "@/components/DailyBars";
-import { ActionForm, ConfirmButton, SubmitButton, inputClass, labelClass } from "@/components/forms";
+import { ActionForm, ConfirmButton, SubmitButton } from "@/components/forms";
+import { inputClass, labelClass } from "@/components/styles";
 import { QrPanel } from "@/components/QrPanel";
 import { ThemeFields } from "@/components/ThemeFields";
 import { galleryStats, galleryViewsByDay, getGallery, itemClickCounts, listItems, type ItemClicks } from "@/lib/galleries";
@@ -22,10 +26,10 @@ import {
 
 export const dynamic = "force-dynamic";
 
-const card = "rounded-lg border border-licorice/10 bg-white p-5";
-const hint = "mt-1 text-xs text-licorice/60";
+const card = "card p-5";
+const hint = "mt-1 text-xs text-mute";
 const smallBtn =
-  "rounded-md border border-licorice/20 bg-white px-2.5 py-1 text-xs font-medium hover:border-licorice/50 disabled:cursor-not-allowed disabled:opacity-40";
+  "rounded-lg border border-line bg-white px-3 py-2 text-xs font-semibold hover:border-accent sm:px-2.5 sm:py-1 hover:text-accent-deep disabled:cursor-not-allowed disabled:opacity-40";
 
 const KIND_LABEL: Record<ItemRow["kind"], string> = { link: "Button", social: "Social icon", image: "Image", video: "Video" };
 
@@ -38,15 +42,15 @@ function summary(item: ItemRow): string {
 function ItemCard({ item, index, total, clicks }: { item: ItemRow; index: number; total: number; clicks?: ItemClicks }) {
   const counted = item.kind !== "video";
   return (
-    <li className={`rounded-md border border-licorice/10 p-3 ${item.hidden ? "bg-licorice/5" : ""}`}>
+    <li className={`rounded-md border border-line p-3 ${item.hidden ? "bg-ground" : ""}`}>
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-        <span className="rounded-full bg-cobalt/10 px-2 py-0.5 text-xs font-medium text-cobalt">{KIND_LABEL[item.kind]}</span>
-        <span className={`min-w-0 flex-1 truncate text-sm ${item.hidden ? "text-licorice/50 line-through" : ""}`} title={summary(item)}>
+        <span className="tag bg-accent-tint text-accent-ink">{KIND_LABEL[item.kind]}</span>
+        <span className={`min-w-0 flex-1 truncate text-sm ${item.hidden ? "text-mute line-through" : ""}`} title={summary(item)}>
           {summary(item)}
         </span>
-        {item.hidden && <span className="text-xs text-licorice/60">Hidden</span>}
+        {item.hidden && <span className="text-xs text-mute">Hidden</span>}
         {counted && (
-          <span className="text-xs tabular-nums text-licorice/70">
+          <span className="text-xs tabular-nums text-mute">
             {clicks?.total ?? 0} {clicks?.total === 1 ? "click" : "clicks"}
             {clicks ? ` (${clicks.d7} in 7 days)` : ""}
           </span>
@@ -76,7 +80,7 @@ function ItemCard({ item, index, total, clicks }: { item: ItemRow; index: number
       </div>
 
       <details className="mt-2">
-        <summary className="cursor-pointer text-xs font-medium text-cobalt">Edit</summary>
+        <summary className="cursor-pointer text-xs font-medium text-accent-deep">Edit</summary>
         <ActionForm action={updateItemAction} className="mt-3 space-y-3">
           <input type="hidden" name="id" value={item.id} />
           <div className="grid gap-3 md:grid-cols-2">
@@ -143,14 +147,14 @@ export default async function GalleryPage({ params }: { params: Promise<{ id: st
   return (
     <div className="space-y-6">
       <div>
-        <Link href="/admin/galleries" className="text-sm text-licorice/70 hover:text-licorice">Back to galleries</Link>
+        <Link href="/admin/galleries" className="text-sm font-semibold text-mute hover:text-accent-deep">&larr; Back to galleries</Link>
         <div className="mt-2 flex flex-wrap items-center gap-3">
-          <h1 className="text-xl font-semibold">{gallery.host}/{gallery.slug}</h1>
+          <h1 className="flex items-center gap-3 text-2xl font-extrabold tracking-tight sm:text-3xl"><DomainKey host={gallery.host} id={gallery.domain_id} hasIcon={gallery.has_icon} /><span className="min-w-0 break-all"><span className="text-mute">{gallery.host}/</span>{gallery.slug}</span></h1>
           <CopyButton value={url} />
           {gallery.published ? (
-            <a href={url} target="_blank" rel="noreferrer" className="text-sm text-cobalt hover:underline">Open</a>
+            <a href={url} target="_blank" rel="noreferrer" className="rounded-lg border border-line bg-white px-3 py-1.5 text-xs font-semibold hover:border-accent hover:text-accent-deep">Open</a>
           ) : (
-            <span className="rounded-full bg-licorice/10 px-2 py-0.5 text-xs font-medium text-licorice/70">Draft, not visible to visitors</span>
+            <span className="tag bg-ink/10 text-mute">Draft, not visible to visitors</span>
           )}
         </div>
       </div>
@@ -158,7 +162,7 @@ export default async function GalleryPage({ params }: { params: Promise<{ id: st
       <div className="grid gap-6 lg:grid-cols-[1.25fr_1fr]">
         <div className="space-y-6">
           <section className={card}>
-            <h2 className="text-sm font-semibold">Page</h2>
+            <h2 className="text-lg font-extrabold">Page</h2>
             <ActionForm action={updateGalleryAction} className="mt-4 space-y-4">
               <input type="hidden" name="id" value={gallery.id} />
               <div>
@@ -175,7 +179,7 @@ export default async function GalleryPage({ params }: { params: Promise<{ id: st
                 <div className="flex flex-wrap items-center gap-4">
                   {avatar && (
                     // eslint-disable-next-line @next/next/no-img-element
-                    <img src={avatar} alt="Current logo or photo" width={56} height={56} className="h-14 w-14 rounded-full border border-licorice/10 object-cover" />
+                    <img src={avatar} alt="Current logo or photo" width={56} height={56} className="h-14 w-14 rounded-full border border-line object-cover" />
                   )}
                   <div className="grid min-w-0 flex-1 gap-2 md:grid-cols-2">
                     <input name="avatar_file" type="file" accept="image/png,image/jpeg,image/webp,image/gif" aria-label="Upload an image" className="block w-full text-sm" />
@@ -217,10 +221,22 @@ export default async function GalleryPage({ params }: { params: Promise<{ id: st
           </section>
 
           <section className={card}>
-            <h2 className="text-sm font-semibold">Buttons, icons and media</h2>
-            <p className={hint}>Shown in this order. Social icons gather in a row under the bio, wherever they sit in the list.</p>
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h2 className="text-lg font-extrabold">Buttons, icons and media</h2>
+                <p className={hint}>Shown in this order. Social icons gather in a row under the bio, wherever they sit in the list.</p>
+              </div>
+              <DrawerButton
+                label="Add item"
+                title="Add to gallery"
+                icon={<PlusIcon />}
+                description="A button, social icon, image or YouTube video. It appears at the end of the list."
+              >
+                <AddItemForm galleryId={gallery.id} />
+              </DrawerButton>
+            </div>
             {items.length === 0 ? (
-              <p className="mt-4 text-sm text-licorice/60">Nothing here yet. Add your first button below.</p>
+              <p className="mt-4 text-sm text-mute">Nothing here yet. Use Add item to create your first button.</p>
             ) : (
               <ul className="mt-4 space-y-3">
                 {items.map((item, i) => (
@@ -229,19 +245,15 @@ export default async function GalleryPage({ params }: { params: Promise<{ id: st
               </ul>
             )}
             {removed && (
-              <p className="mt-3 text-xs text-licorice/60">
+              <p className="mt-3 text-xs text-mute">
                 {removed.total} {removed.total === 1 ? "click" : "clicks"} on items that were later removed are still counted in the totals.
               </p>
             )}
-            <div className="mt-6 border-t border-licorice/10 pt-5">
-              <h3 className="text-sm font-semibold">Add</h3>
-              <AddItemForm galleryId={gallery.id} />
-            </div>
           </section>
 
           <section className={card}>
-            <h2 className="text-sm font-semibold">Delete gallery</h2>
-            <p className="mt-1 text-sm text-licorice/70">The page and its statistics are removed, and the address stops working.</p>
+            <h2 className="text-lg font-extrabold">Delete gallery</h2>
+            <p className="mt-1 text-sm text-mute">The page and its statistics are removed, and the address stops working.</p>
             <form action={deleteGalleryAction} className="mt-3">
               <input type="hidden" name="id" value={gallery.id} />
               <ConfirmButton message={`Delete ${gallery.host}/${gallery.slug}?`}>Delete gallery</ConfirmButton>
@@ -251,34 +263,34 @@ export default async function GalleryPage({ params }: { params: Promise<{ id: st
 
         <div className="space-y-6">
           <section className={card}>
-            <h2 className="text-sm font-semibold">Preview</h2>
+            <h2 className="text-lg font-extrabold">Preview</h2>
             <p className={hint}>Updates after you save. Buttons do nothing here, so previews are never counted.</p>
             <iframe
               title="Gallery preview"
               src={`/api/galleries/${gallery.id}/preview?v=${new Date(gallery.updated_at).getTime()}`}
-              className="mx-auto mt-3 block h-[640px] w-full max-w-[390px] rounded-lg border border-licorice/15 bg-white"
+              className="mx-auto mt-3 block h-[640px] w-full max-w-[390px] rounded-lg border border-line bg-white"
             />
           </section>
 
           <section className={card}>
             <div className="flex items-baseline justify-between">
-              <h2 className="text-sm font-semibold">Views, last 30 days</h2>
-              <p className="text-sm text-licorice/70">
-                <span className="font-semibold text-licorice">{stats.views_total}</span> total, {stats.views_7d} in 7 days
+              <h2 className="text-lg font-extrabold">Views, last 30 days</h2>
+              <p className="text-sm text-mute">
+                <span className="font-semibold text-ink">{stats.views_total}</span> total, {stats.views_7d} in 7 days
               </p>
             </div>
             <div className="mt-4"><DailyBars data={days} /></div>
             <dl className="mt-4 grid grid-cols-2 gap-3 text-sm">
               <div>
-                <dt className="text-xs uppercase tracking-wide text-licorice/60">Button clicks</dt>
-                <dd className="font-semibold tabular-nums">{stats.clicks_total} <span className="font-normal text-licorice/70">({stats.clicks_7d} in 7 days)</span></dd>
+                <dt className="text-xs uppercase tracking-wide text-mute">Button clicks</dt>
+                <dd className="font-semibold tabular-nums">{stats.clicks_total} <span className="font-normal text-mute">({stats.clicks_7d} in 7 days)</span></dd>
               </div>
               <div>
-                <dt className="text-xs uppercase tracking-wide text-licorice/60">Views from QR</dt>
+                <dt className="text-xs uppercase tracking-wide text-mute">Views from QR</dt>
                 <dd className="font-semibold tabular-nums">{stats.qr_views}</dd>
               </div>
             </dl>
-            <p className="mt-4 text-xs text-licorice/60">Bots and link previews are not counted. Days follow {appTimezone()} time.</p>
+            <p className="mt-4 text-xs text-mute">Bots and link previews are not counted. Days follow {appTimezone()} time.</p>
           </section>
 
           <QrPanel id={gallery.id} target={qrTarget(gallery.host, gallery.slug)} base={`/api/galleries/${gallery.id}/qr`} />

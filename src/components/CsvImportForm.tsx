@@ -2,7 +2,8 @@
 
 import { useState } from "react";
 import { importCsvAction } from "@/app/admin/actions";
-import { ActionForm, SubmitButton, inputClass, labelClass } from "./forms";
+import { ActionForm, SubmitButton } from "./forms";
+import { inputClass, labelClass } from "./styles";
 
 // Keep in step with CSV_MAX_BYTES in lib/csv.ts (that file is not imported here so the browser bundle stays small).
 const MAX_BYTES = 1_000_000;
@@ -29,7 +30,7 @@ export function CsvImportForm() {
             e.currentTarget.reportValidity();
           }}
         />
-        <p className="mt-1 text-xs text-licorice/60">Up to 1 MB or 20,000 rows. The file is read for this request and not kept.</p>
+        <p className="mt-1 text-xs text-ink/60">Up to 1 MB or 20,000 rows. The file is read for this request and not kept.</p>
       </div>
 
       <label className="flex items-start gap-2 text-sm">

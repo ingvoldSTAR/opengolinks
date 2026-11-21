@@ -2,7 +2,8 @@
 
 import { useState } from "react";
 import { importRebrandlyAction } from "@/app/admin/actions";
-import { ActionForm, SubmitButton, inputClass, labelClass } from "./forms";
+import { ActionForm, SubmitButton } from "./forms";
+import { inputClass, labelClass } from "./styles";
 
 export function ImportForm() {
   const [preview, setPreview] = useState(true);
@@ -20,12 +21,12 @@ export function ImportForm() {
             spellCheck={false}
             className={inputClass}
           />
-          <p className="mt-1 text-xs text-licorice/60">Used for this request only. It is not saved.</p>
+          <p className="mt-1 text-xs text-mute">Used for this request only. It is not saved.</p>
         </div>
         <div>
           <label htmlFor="workspace" className={labelClass}>Workspace ID (optional)</label>
           <input id="workspace" name="workspace" autoComplete="off" spellCheck={false} className={inputClass} />
-          <p className="mt-1 text-xs text-licorice/60">Only needed if the key&apos;s workspace is not your default one.</p>
+          <p className="mt-1 text-xs text-mute">Only needed if the key&apos;s workspace is not your default one.</p>
         </div>
       </div>
 

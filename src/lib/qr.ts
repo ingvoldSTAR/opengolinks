@@ -12,7 +12,9 @@ export async function qrResponse(target: string, filenameBase: string, sp: URLSe
   const requested = sp.get("ec") as Level | null;
   const level: Level = requested && LEVELS.includes(requested) ? requested : "Q";
   const dark = parseHexColour(sp.get("dark"), "#000000");
-  const light = parseHexColour(sp.get("light"), "#ffffff");
+  // "transparent" gives a clear background (fully transparent PNG, no background rectangle in the SVG).
+  const lightParam = sp.get("light");
+  const light = lightParam === "transparent" ? "#00000000" : parseHexColour(lightParam, "#ffffff");
   const options = { errorCorrectionLevel: level, margin: 4, width: size, color: { dark, light } } as const;
 
   const headers: Record<string, string> = { "Cache-Control": "private, no-store" };

@@ -9,6 +9,7 @@ export type GalleryRow = {
   id: number;
   domain_id: number;
   host: string;
+  has_icon?: boolean;
   slug: string;
   title: string;
   bio: string | null;

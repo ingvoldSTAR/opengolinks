@@ -111,4 +111,19 @@ create table if not exists login_attempts (
   attempts     integer not null default 0,
   window_start timestamptz not null default now()
 );
+
+-- Brand icon fetched from each domain's website, shown beside the domain in the admin.
+alter table domains add column if not exists favicon_data       bytea;
+alter table domains add column if not exists favicon_type       text;
+alter table domains add column if not exists favicon_checked_at timestamptz;
+
+-- When a domain first answered as live. Domains that have not yet are listed first in the admin.
+-- Domains that already existed when this column was added count as live.
+do $$
+begin
+  if not exists (select 1 from information_schema.columns where table_name = 'domains' and column_name = 'went_live_at') then
+    alter table domains add column went_live_at timestamptz;
+    update domains set went_live_at = now();
+  end if;
+end $$;
 `;
