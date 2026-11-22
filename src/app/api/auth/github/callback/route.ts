@@ -1,19 +1,8 @@
-import { NextResponse, type NextRequest } from "next/server";
-import { startSession } from "@/lib/auth";
-import { currentHost, currentOrigin, isAdminHost } from "@/lib/host";
-import { matchUser } from "@/lib/users";
+import type { NextRequest } from "next/server";
+import { endpoints, github } from "@/lib/providers";
+import { failFlow, finishFlow, readCallback } from "@/lib/signin-flow";
 
 export const dynamic = "force-dynamic";
-
-const STATE_COOKIE = "opengolinks_oauth_state";
-
-async function fail(message: string) {
-  const url = new URL("/admin/login", await currentOrigin());
-  url.searchParams.set("error", message);
-  const res = NextResponse.redirect(url);
-  res.cookies.delete({ name: STATE_COOKIE, path: "/api/auth/github" });
-  return res;
-}
 
 const ghHeaders = (token: string) => ({
   Authorization: `Bearer ${token}`,
@@ -22,54 +11,34 @@ const ghHeaders = (token: string) => ({
 });
 
 export async function GET(req: NextRequest) {
-  const clientId = process.env.GITHUB_CLIENT_ID;
-  const clientSecret = process.env.GITHUB_CLIENT_SECRET;
-  if (!isAdminHost(await currentHost()) || !clientId || !clientSecret) {
-    return new NextResponse("Not found", { status: 404 });
-  }
-
-  const code = req.nextUrl.searchParams.get("code");
-  const state = req.nextUrl.searchParams.get("state");
-  const expected = req.cookies.get(STATE_COOKIE)?.value;
-  if (!code || !state || !expected || state !== expected) {
-    return fail("GitHub sign-in expired or was invalid. Try again.");
-  }
+  const started = await readCallback(req, "github");
+  if (!started.ok) return started.res;
+  const { code, redirectUri } = started.cb;
+  const g = github();
+  const e = endpoints();
 
   try {
-    const tokenRes = await fetch("https://github.com/login/oauth/access_token", {
+    const tokenRes = await fetch(`${e.githubWeb}/login/oauth/access_token`, {
       method: "POST",
       headers: { Accept: "application/json", "Content-Type": "application/json", "User-Agent": "opengolinks" },
-      body: JSON.stringify({
-        client_id: clientId,
-        client_secret: clientSecret,
-        code,
-        redirect_uri: `${await currentOrigin()}/api/auth/github/callback`,
-      }),
+      body: JSON.stringify({ client_id: g.clientId, client_secret: g.clientSecret, code, redirect_uri: redirectUri }),
+      signal: AbortSignal.timeout(15_000),
     });
     const { access_token: token } = (await tokenRes.json()) as { access_token?: string };
-    if (!token) return fail("GitHub did not accept the sign-in. Try again.");
+    if (!token) return failFlow("github", "GitHub did not accept the sign-in. Try again.");
 
     const [userRes, emailsRes] = await Promise.all([
-      fetch("https://api.github.com/user", { headers: ghHeaders(token) }),
-      fetch("https://api.github.com/user/emails", { headers: ghHeaders(token) }),
+      fetch(`${e.githubApi}/user`, { headers: ghHeaders(token), signal: AbortSignal.timeout(15_000) }),
+      fetch(`${e.githubApi}/user/emails`, { headers: ghHeaders(token), signal: AbortSignal.timeout(15_000) }),
     ]);
-    if (!userRes.ok || !emailsRes.ok) return fail("Could not read your GitHub profile.");
+    if (!userRes.ok || !emailsRes.ok) return failFlow("github", "Could not read your GitHub profile.");
     const { login } = (await userRes.json()) as { login: string };
     const emails = (await emailsRes.json()) as { email: string; verified: boolean }[];
 
     // Only verified addresses count, otherwise anyone could add someone else's email to GitHub.
-    const email = await matchUser(
-      emails.filter((e) => e.verified).map((e) => e.email),
-      login,
-    );
-    if (!email) return fail("No account for this GitHub user. Ask an admin to add your verified email.");
-
-    await startSession(email);
-    const res = NextResponse.redirect(new URL("/admin", await currentOrigin()));
-    res.cookies.delete({ name: STATE_COOKIE, path: "/api/auth/github" });
-    return res;
+    return finishFlow(req, "github", { verifiedEmails: emails.filter((m) => m.verified).map((m) => m.email), githubLogin: login });
   } catch (err) {
-    console.error("[auth] github sign-in failed:", err);
-    return fail("GitHub sign-in failed. Try again.");
+    console.error("[auth] github sign-in failed:", err instanceof Error ? err.message : err);
+    return failFlow("github", "GitHub sign-in failed. Try again.");
   }
 }

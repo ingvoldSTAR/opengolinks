@@ -6,7 +6,7 @@ import { NavTabs } from "./NavTabs";
 import { CloseIcon, MenuIcon } from "./Icons";
 
 /** Phone navigation: a button that opens the same list as the side rail. */
-export function MobileMenu({ children }: { children?: React.ReactNode }) {
+export function MobileMenu({ children, isAdmin = false }: { children?: React.ReactNode; isAdmin?: boolean }) {
   const [open, setOpen] = useState(false);
   const path = usePathname();
   useEffect(() => setOpen(false), [path]);
@@ -24,7 +24,7 @@ export function MobileMenu({ children }: { children?: React.ReactNode }) {
       </button>
       {open && (
         <div id="mobile-menu" className="rail absolute inset-x-0 top-full z-40 border-t border-white/10 bg-ink px-4 pb-4 pt-3 shadow-xl">
-          <NavTabs onNavigate={() => setOpen(false)} />
+          <NavTabs onNavigate={() => setOpen(false)} isAdmin={isAdmin} />
           {children}
         </div>
       )}

@@ -1,3 +1,4 @@
+import { adminsOnly } from "@/lib/gate";
 import Link from "next/link";
 import { CsvImportForm } from "@/components/CsvImportForm";
 import { ImportForm } from "@/components/ImportForm";
@@ -6,6 +7,8 @@ import { listDomains } from "@/lib/links";
 export const dynamic = "force-dynamic";
 
 export default async function ImportPage() {
+  const denied = await adminsOnly();
+  if (denied) return denied;
   const domains = await listDomains();
   return (
     <div className="space-y-6">

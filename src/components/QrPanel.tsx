@@ -2,24 +2,12 @@
 
 import { useState, useTransition } from "react";
 import { saveQrColoursAction } from "@/app/admin/actions";
+import { scanWarning } from "@/lib/colour";
 import { inputClass, labelClass } from "./styles";
 
 export type QrSaved = { dark: string; light: string; source: "own" | "domain" | "default" };
 
 type Background = "white" | "transparent" | "custom";
-
-function luminance(hex: string): number {
-  const c = [1, 3, 5].map((i) => {
-    const v = parseInt(hex.slice(i, i + 2), 16) / 255;
-    return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;
-  });
-  return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
-}
-
-function contrast(a: string, b: string): number {
-  const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x);
-  return (hi + 0.05) / (lo + 0.05);
-}
 
 const CHECKERBOARD = {
   backgroundImage:
@@ -70,15 +58,7 @@ export function QrPanel({
       setAsking(false);
     });
 
-  const bgColour = bg === "custom" ? custom : "#ffffff";
-  const warning =
-    bg === "transparent"
-      ? null
-      : luminance(dark) >= luminance(bgColour)
-        ? "The code is lighter than its background. Many phones cannot scan an inverted QR code, so make the code darker than the background."
-        : contrast(dark, bgColour) < 4
-          ? "Low contrast between the code and its background. Choose a darker code or a lighter background so it scans reliably."
-          : null;
+  const warning = bg === "transparent" ? null : scanWarning(dark, bg === "custom" ? custom : "#ffffff");
   const params = (extra: Record<string, string>) =>
     new URLSearchParams({ size, ec, dark, light, ...extra }).toString();
   const base = baseOverride ?? `/api/qr/${id}`;

@@ -2,22 +2,24 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { GlobeIcon, GridIcon, LinkIcon, MegaphoneIcon, UploadIcon } from "./Icons";
+import { GlobeIcon, GridIcon, LinkIcon, MegaphoneIcon, SlidersIcon, UploadIcon, UsersIcon } from "./Icons";
 
 const ITEMS = [
   { href: "/admin", label: "Links", Icon: LinkIcon, match: (p: string) => p === "/admin" || p.startsWith("/admin/links") },
   { href: "/admin/campaigns", label: "Campaigns", Icon: MegaphoneIcon, match: (p: string) => p.startsWith("/admin/campaigns") },
   { href: "/admin/galleries", label: "Galleries", Icon: GridIcon, match: (p: string) => p.startsWith("/admin/galleries") },
-  { href: "/admin/domains", label: "Domains", Icon: GlobeIcon, match: (p: string) => p.startsWith("/admin/domains") },
-  { href: "/admin/import", label: "Import", Icon: UploadIcon, match: (p: string) => p.startsWith("/admin/import") },
+  { href: "/admin/domains", label: "Domains", Icon: GlobeIcon, match: (p: string) => p.startsWith("/admin/domains"), adminOnly: true },
+  { href: "/admin/import", label: "Import", Icon: UploadIcon, match: (p: string) => p.startsWith("/admin/import"), adminOnly: true },
+  { href: "/admin/users", label: "People", Icon: UsersIcon, match: (p: string) => p.startsWith("/admin/users"), adminOnly: true },
+  { href: "/admin/settings", label: "Settings", Icon: SlidersIcon, match: (p: string) => p.startsWith("/admin/settings"), adminOnly: true },
 ];
 
 /** The main navigation, as a vertical list for the side rail and the phone menu. */
-export function NavTabs({ onNavigate }: { onNavigate?: () => void }) {
+export function NavTabs({ onNavigate, isAdmin = false }: { onNavigate?: () => void; isAdmin?: boolean }) {
   const path = usePathname();
   return (
     <nav aria-label="Main" className="flex flex-col gap-1">
-      {ITEMS.map(({ href, label, Icon, match }) => {
+      {ITEMS.filter((item) => isAdmin || !("adminOnly" in item && item.adminOnly)).map(({ href, label, Icon, match }) => {
         const active = match(path);
         return (
           <Link

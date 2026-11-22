@@ -86,16 +86,17 @@ async function createDriver(): Promise<Driver> {
 async function init(): Promise<Driver> {
   const driver = await createDriver();
   await driver.exec(SCHEMA_SQL);
-  // Accounts listed in ADMIN_EMAILS are created if missing. Removing one here does not delete it.
+  // Accounts listed in ADMIN_EMAILS are created if missing, and are always admins. Removing one here does not delete it.
   const emails = (process.env.ADMIN_EMAILS ?? "")
     .split(",")
     .map((e) => e.trim().toLowerCase())
     .filter(Boolean);
   for (const email of emails) {
     await driver.query(
-      "insert into users (email) select $1::text where not exists (select 1 from users where lower(email) = $1::text)",
+      "insert into users (email, role) select $1::text, 'admin' where not exists (select 1 from users where lower(email) = $1::text)",
       [email],
     );
+    await driver.query("update users set role = 'admin' where lower(email) = $1::text and role <> 'admin'", [email]);
   }
   return driver;
 }

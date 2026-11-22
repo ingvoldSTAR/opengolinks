@@ -24,7 +24,7 @@ async function clientKey(): Promise<string> {
 }
 
 /** Counts one attempt on `key`. Returns how many attempts the window holds now and when it ends. */
-async function count(key: string): Promise<{ attempts: number; secondsLeft: number }> {
+async function count(key: string, windowMinutes = WINDOW_MINUTES): Promise<{ attempts: number; secondsLeft: number }> {
   const rows = await query<{ attempts: number; seconds_left: number }>(
     `insert into login_attempts (key, attempts, window_start) values ($1, 1, now())
      on conflict (key) do update set
@@ -34,7 +34,7 @@ async function count(key: string): Promise<{ attempts: number; secondsLeft: numb
                            then now() else login_attempts.window_start end
      returning attempts,
        greatest(0, ceil(extract(epoch from (window_start + ($2::int * interval '1 minute') - now()))))::int as seconds_left`,
-    [key, WINDOW_MINUTES],
+    [key, windowMinutes],
   );
   return { attempts: Number(rows[0].attempts), secondsLeft: Number(rows[0].seconds_left) };
 }
@@ -66,4 +66,14 @@ export async function loginSucceeded(clientKey: string): Promise<void> {
 function tooMany(seconds: number): string {
   const minutes = Math.max(1, Math.ceil(seconds / 60));
   return `Too many sign-in attempts. Try again in ${minutes} ${minutes === 1 ? "minute" : "minutes"}.`;
+}
+
+/**
+ * A general limit for the OAuth and MCP endpoints, counted in the same table. `bucket` names what is limited
+ * and `who` is the address of the caller, or a grant id once a caller is signed in.
+ */
+export async function rateLimit(bucket: string, max: number, windowMinutes: number, who?: string): Promise<{ allowed: boolean; retryAfter: number }> {
+  const key = `${bucket}:${who ?? (await clientKey())}`.slice(0, 120);
+  const { attempts, secondsLeft } = await count(key, windowMinutes);
+  return { allowed: attempts <= max, retryAfter: secondsLeft };
 }
