@@ -14,6 +14,11 @@ const nextConfig: NextConfig = {
   async headers() {
     return [
       { source: "/admin/:path*", headers: [...common, { key: "X-Frame-Options", value: "DENY" }] },
+      // An invitation link holds a token, so it must not leak in a Referer header, and is never cached.
+      {
+        source: "/admin/invite/:path*",
+        headers: [{ key: "Referrer-Policy", value: "no-referrer" }, { key: "Cache-Control", value: "no-store" }],
+      },
       // The gallery preview is shown inside the admin area, so it may be framed by this same site only.
       {
         source: "/api/galleries/:id/preview",

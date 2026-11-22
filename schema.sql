@@ -129,3 +129,57 @@ alter table links     add column if not exists qr_dark  text;
 alter table links     add column if not exists qr_light text;
 alter table galleries add column if not exists qr_dark  text;
 alter table galleries add column if not exists qr_light text;
+
+-- OAuth for the MCP endpoint (see oauth.ts). Codes and tokens are stored only as SHA-256 hashes.
+create table if not exists oauth_clients (
+  client_id     text primary key,
+  client_name   text not null,
+  redirect_uris text not null,
+  created_at    timestamptz not null default now()
+);
+
+create table if not exists oauth_codes (
+  code_hash      text primary key,
+  client_id      text not null references oauth_clients(client_id) on delete cascade,
+  user_email     text not null,
+  redirect_uri   text not null,
+  code_challenge text not null,
+  resource       text,
+  expires_at     timestamptz not null
+);
+
+create table if not exists oauth_tokens (
+  token_hash   text primary key,
+  kind         text not null,
+  grant_id     text not null,
+  client_id    text not null references oauth_clients(client_id) on delete cascade,
+  user_email   text not null,
+  expires_at   timestamptz not null,
+  created_at   timestamptz not null default now(),
+  last_used_at timestamptz
+);
+create index if not exists oauth_tokens_grant_idx on oauth_tokens (grant_id);
+
+-- Roles and sign-in history. Accounts that existed when roles were added are admins.
+do $$
+begin
+  if not exists (select 1 from information_schema.columns where table_name = 'users' and column_name = 'role') then
+    alter table users add column role text not null default 'member';
+    update users set role = 'admin';
+  end if;
+end $$;
+alter table users add column if not exists last_login_at timestamptz;
+alter table users add column if not exists invited_by    text;
+
+-- Pending invitations. The link holds a random token; only its SHA-256 hash is stored.
+create table if not exists invitations (
+  id         serial primary key,
+  email      text not null,
+  role       text not null,
+  token_hash text not null unique,
+  invited_by text not null,
+  created_at timestamptz not null default now(),
+  expires_at timestamptz not null,
+  emailed_at timestamptz
+);
+create unique index if not exists invitations_email_idx on invitations (lower(email));

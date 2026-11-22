@@ -126,6 +126,11 @@ export async function getLink(id: number): Promise<LinkRow | null> {
   return rows[0] ?? null;
 }
 
+export async function getLinkByAddress(host: string, slug: string): Promise<LinkRow | null> {
+  const rows = await query<LinkRow>(`${LINK_SELECT} where d.host = $1 and l.slug = $2`, [host, slug]);
+  return rows[0] ?? null;
+}
+
 type NewLink = {
   domainId: number;
   slug: string | null;

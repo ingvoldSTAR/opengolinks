@@ -102,3 +102,12 @@ export const GalleryIcon = (p: IconProps) => (
     <path d="m5 17 4.5-4.5 3 3 2.5-2.5L19 17" />
   </Svg>
 );
+
+export const UsersIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <circle cx="9" cy="8" r="3.25" />
+    <path d="M3 19.5c.4-3.2 2.9-5 6-5s5.6 1.8 6 5" />
+    <path d="M16 5.2a3.25 3.25 0 0 1 0 5.6" />
+    <path d="M18.5 14.9c1.5.7 2.3 2 2.5 4.1" />
+  </Svg>
+);

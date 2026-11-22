@@ -1,8 +1,9 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import { APP_NAME } from "@/lib/brand";
 
 export const metadata: Metadata = {
-  title: "opengolinks",
+  title: APP_NAME,
   robots: { index: false, follow: false },
 };
 

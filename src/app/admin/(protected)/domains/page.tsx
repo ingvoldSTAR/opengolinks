@@ -1,3 +1,6 @@
+import { appTimezone } from "@/lib/timezone";
+import { ReachCheck } from "@/components/ReachCheck";
+import { adminsOnly } from "@/lib/gate";
 import { Suspense } from "react";
 import { after } from "next/server";
 import { DrawerButton } from "@/components/Drawer";
@@ -6,7 +9,7 @@ import { DomainKey } from "@/components/DomainTag";
 import { CopyButton } from "@/components/CopyButton";
 import { ActionForm, ConfirmButton, SubmitButton } from "@/components/forms";
 import { inputClass, labelClass } from "@/components/styles";
-import { cnameTarget, checkDomain, type DomainStatus } from "@/lib/domainStatus";
+import { cnameTarget, inspectDomain, type DomainCheck, type DomainStatus } from "@/lib/domainStatus";
 import { currentHost } from "@/lib/host";
 import { backfillIcons } from "@/lib/favicon";
 import { listDomains, markDomainLive } from "@/lib/links";
@@ -27,68 +30,132 @@ function Record({ label, value }: { label: string; value: string }) {
   );
 }
 
-function StatusPill({ status }: { status: DomainStatus }) {
+function StatusPill({ status, wasLive }: { status: DomainStatus; wasLive: boolean }) {
   if (status === "unchecked") return null;
   const live = status === "live";
+  const label = live ? "Live" : status === "dns-missing" ? "DNS not set up" : wasLive ? "Not confirmed" : "Almost there";
   return (
-    <span
-      className={`tag gap-1.5 ${live ? "bg-ok/10 text-ok" : "bg-danger-tint text-danger-ink"}`}
-    >
+    <span className={`tag gap-1.5 ${live ? "bg-ok/10 text-ok" : "bg-danger-tint text-danger-ink"}`}>
       <span aria-hidden="true" className={`size-1.5 rounded-full ${live ? "bg-ok" : "bg-danger-ink"}`} />
-      {live ? "Live" : status === "dns-missing" ? "DNS not set up" : "Almost there"}
+      {label}
     </span>
   );
 }
 
-async function StatusBlock({ id, host, name, target, pending }: { id: number; host: string; name: string; target: string; pending: boolean }) {
-  const status = await checkDomain(host);
+/** What this server saw at each address of the domain, so a failure explains itself. */
+function Evidence({ check }: { check: DomainCheck }) {
+  if (check.addresses.length === 0) return null;
+  const time = new Date(check.checkedAt).toLocaleTimeString("en-GB", { timeZone: appTimezone() });
+  return (
+    <div className="mt-3 rounded-md bg-ground px-3 py-2">
+      <div className="text-[11px] font-medium uppercase tracking-wide text-mute">What this server saw, at {time}</div>
+      <ul className="mt-1 space-y-0.5 text-xs">
+        {check.addresses.map((a) => (
+          <li key={a.ip} className="flex gap-2">
+            <span aria-hidden="true" className={`mt-1.5 size-1.5 shrink-0 rounded-full ${a.ok ? "bg-ok" : "bg-danger-ink"}`} />
+            <span>
+              <span className="font-mono">{a.ip}</span>: {a.reason}
+            </span>
+          </li>
+        ))}
+      </ul>
+      <p className="mt-2 text-[11px] text-mute">
+        This is what the server sees from its own network, which is not always what visitors see: a server often cannot reach its own public addresses, and an ALIAS
+        record points to different addresses depending on who asks.
+      </p>
+    </div>
+  );
+}
+
+async function StatusBlock({
+  id,
+  host,
+  name,
+  target,
+  pending,
+  wasLive,
+  fresh,
+}: {
+  id: number;
+  host: string;
+  name: string;
+  target: string;
+  pending: boolean;
+  wasLive: boolean;
+  fresh: boolean;
+}) {
+  const check = await inspectDomain(host, { fresh });
+  const status = check.status;
   // Once a domain answers, it stops being pinned to the top of the list.
   if (pending && (status === "live" || status === "unchecked")) {
     after(() => markDomainLive(id).catch((e) => console.error("[domains]", host, e instanceof Error ? e.message : e)));
   }
+  const needsDns = status === "dns-missing";
+  const pill = status === "unchecked" ? null : <StatusPill status={status} wasLive={wasLive} />;
+
+  const retry = (
+    <p className={hint}>
+      Done something? <a href="/admin/domains?recheck=1" className="text-accent-deep hover:underline">Check again</a>
+    </p>
+  );
+
+  // Not confirmed by this server. The browser is asked as well (ReachCheck), since this server cannot always reach its own
+  // public addresses; what follows is shown only if the browser cannot reach the domain either.
+  const problem =
+    status === "needs-connect" && wasLive ? (
+      <div className="mt-4 rounded-md border border-danger/30 p-4">
+        <h4 className="text-sm font-semibold">{host} could not be confirmed</h4>
+        <p className="mt-1 text-sm text-ink/80">
+          It was live before, so this is often temporary. If it keeps happening, check at your hosting provider that {host} is still attached to this app and
+          that its certificate has not expired or failed, then restart the app.
+        </p>
+        <Evidence check={check} />
+        {retry}
+      </div>
+    ) : (
+      <div className="mt-4 rounded-md border border-danger/30 p-4">
+        <h4 className="text-sm font-semibold">Finish setting up {host}</h4>
+        <ol className="mt-2 list-decimal space-y-3 pl-5 text-sm text-ink/80">
+          <li className={needsDns ? "" : "text-mute line-through"}>
+            <span>At the DNS provider for this domain, create this record.</span>
+            {needsDns && (
+              <>
+                <div className="mt-2 grid gap-2 sm:grid-cols-3">
+                  <Record label="Type" value="CNAME" />
+                  <Record label="Name" value={name} />
+                  <Record label="Value" value={target} />
+                </div>
+                <p className={hint}>
+                  Some providers want the full name, {host}, instead of {name}. DNS changes can take a while to spread. Some hosts replace this record with their own
+                  alias or flattened record once the domain is attached. That is expected. A domain at the top of a zone (no subdomain) cannot use a CNAME at most
+                  DNS providers: use an ALIAS or ANAME record, or a subdomain such as go.
+                </p>
+              </>
+            )}
+          </li>
+          <li>
+            At your hosting provider, attach <span className="font-medium">{host}</span> to this app so that requests for it reach the app and it has a
+            certificate. The steps depend on the host (often called an alias, custom domain or parked domain): see the deployment guide in the README. Reload
+            this page to check.
+          </li>
+        </ol>
+        {status === "needs-connect" && <Evidence check={check} />}
+        {retry}
+      </div>
+    );
+
+  if (status === "live" || status === "unchecked") return pill ? <div className="mt-3">{pill}</div> : null;
   return (
-    <>
-      {status !== "unchecked" && (
-        <div className="mt-3">
-          <StatusPill status={status} />
-        </div>
-      )}
-        {(status === "dns-missing" || status === "needs-connect") && (
-          <div className="mt-4 rounded-md border border-danger/30 p-4">
-            <h4 className="text-sm font-semibold">Finish setting up {host}</h4>
-            <ol className="mt-2 list-decimal space-y-3 pl-5 text-sm text-ink/80">
-              <li className={status === "needs-connect" ? "text-mute line-through" : ""}>
-                <span>At the DNS provider for this domain, create this record.</span>
-                {status === "dns-missing" && (
-                  <div className="mt-2 grid gap-2 sm:grid-cols-3">
-                    <Record label="Type" value="CNAME" />
-                    <Record label="Name" value={name} />
-                    <Record label="Value" value={target} />
-                  </div>
-                )}
-                {status === "dns-missing" && (
-                  <p className={hint}>
-                    Some providers want the full name, {host}, instead of {name}. DNS changes can take a while to spread.
-                    Some hosts replace this record with their own alias once the domain is attached. That is expected.
-                  </p>
-                )}
-              </li>
-              <li>
-                At your hosting provider, attach <span className="font-medium">{host}</span> to this app so that requests for it
-                reach the app and it has a certificate. The steps depend on the host (often called an alias, custom domain or
-                parked domain). Reload this page to check.
-              </li>
-            </ol>
-            <p className={hint}>
-              Done something? <a href="/admin/domains" className="text-accent-deep hover:underline">Check again</a>
-            </p>
-          </div>
-        )}
-    </>
+    <ReachCheck id={id} host={host} pending={pending} pill={pill} livePill={<StatusPill status="live" wasLive={wasLive} />}>
+      {problem}
+    </ReachCheck>
   );
 }
 
-export default async function DomainsPage() {
+export default async function DomainsPage({ searchParams }: { searchParams: Promise<{ recheck?: string }> }) {
+  const denied = await adminsOnly();
+  if (denied) return denied;
+  const fresh = (await searchParams).recheck === "1";
   const [domains, host] = await Promise.all([listDomains(), currentHost()]);
   backfillIcons(domains);
   const target = cnameTarget(host);
@@ -115,7 +182,7 @@ export default async function DomainsPage() {
               <p className={hint}>Just the domain, without https:// or a path. Use a subdomain such as go.example.com.</p>
             </div>
             <ul className="space-y-2 rounded-xl bg-ground p-4 text-sm text-ink/80">
-              <li>Its card then shows the DNS record to create and tells you when the domain is live.</li>
+              <li>Its card then shows what is left to do, a DNS record and then attaching the domain at your host, and tells you when the domain is live.</li>
               <li>The brand icon is fetched from the main website, for example example.com.</li>
               <li>Visitors with no valid short link go to the main website until you change it.</li>
             </ul>
@@ -156,7 +223,7 @@ export default async function DomainsPage() {
             </div>
 
             <Suspense fallback={<p className="mt-3 flex items-center gap-2 text-sm text-mute"><span className="size-2 animate-pulse rounded-full bg-mute" />Checking DNS...</p>}>
-              <StatusBlock id={d.id} host={d.host} name={name} target={target} pending={!d.went_live_at} />
+              <StatusBlock id={d.id} host={d.host} name={name} target={target} pending={!d.went_live_at} wasLive={Boolean(d.went_live_at)} fresh={fresh} />
             </Suspense>
 
             <ActionForm action={updateDomainAction} className="mt-4">

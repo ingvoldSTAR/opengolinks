@@ -1,24 +1,27 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { after } from "next/server";
 import { notFound, redirect } from "next/navigation";
-import { checkPassword, endSession, requireAdmin, startSession } from "@/lib/auth";
+import { adminOnlyError, checkPassword, currentRole, endSession, requireAdmin, sessionIdentity, startSession } from "@/lib/auth";
 import { currentHost, isAdminHost } from "@/lib/host";
+import { safeNext } from "@/lib/nav";
+import { passwordLoginEnabled } from "@/lib/providers";
+import { addDomainWithDefaults } from "@/lib/domainSetup";
 import { refreshFavicon } from "@/lib/favicon";
+import { listGrants, revokeGrant } from "@/lib/oauth";
 import { cleanDark, cleanLight, saveQrColours, type QrKind } from "@/lib/qrColours";
 import { loginSucceeded, startLoginAttempt } from "@/lib/ratelimit";
 import { CSV_MAX_BYTES, csvRecords } from "@/lib/csv";
 import { planImport, type ImportRecord } from "@/lib/import";
 import {
   SlugTakenError,
-  createDomain,
   createLink,
   deleteDomain,
   deleteLink,
   existingLinkMap,
   importLinks,
   listDomains,
+  markDomainLive,
   updateDomain,
   updateLink,
 } from "@/lib/links";
@@ -47,8 +50,6 @@ import {
 import { RebrandlyError, fetchAllLinks, rebrandlyRecords } from "@/lib/rebrandly";
 import { UTM_KEYS, cleanUtmValue, type Utm } from "@/lib/utm";
 import {
-  apexUrl,
-  parseHostInput,
   parseOptionalUrl,
   parseRedirectCode,
   parseSlug,
@@ -65,6 +66,7 @@ const code = (e: unknown) => (e as { code?: string } | null)?.code;
 
 export async function loginAction(_prev: State, fd: FormData): Promise<State> {
   if (!isAdminHost(await currentHost())) notFound();
+  if (!passwordLoginEnabled()) return { error: "Password sign-in is switched off. Use one of the other sign-in options." };
   const gate = await startLoginAttempt();
   if (!gate.allowed) return { error: gate.message };
   if (!checkPassword(String(fd.get("password") ?? ""))) {
@@ -73,7 +75,7 @@ export async function loginAction(_prev: State, fd: FormData): Promise<State> {
   }
   await loginSucceeded(gate.clientKey);
   await startSession();
-  redirect("/admin");
+  redirect(safeNext(fd.get("next")) ?? "/admin");
 }
 
 export async function logoutAction() {
@@ -142,19 +144,33 @@ export async function deleteLinkAction(fd: FormData) {
 
 export async function addDomainAction(_prev: State, fd: FormData): Promise<State> {
   await requireAdmin();
-  const host = parseHostInput(text(fd, "host"));
-  if (!host.ok) return { error: host.error };
-  try {
-    // New domains send visitors with no (or a wrong) short link to the main website. Editable on the Domains page.
-    const home = apexUrl(host.value);
-    const id = await createDomain(host.value, home, home);
-    after(() => refreshFavicon(id, host.value).catch((e) => console.error("[favicon]", host.value, e instanceof Error ? e.message : e)));
-  } catch (e) {
-    if (code(e) === "23505") return { error: "That domain is already added." };
-    throw e;
-  }
+  const denied = await adminOnlyError();
+  if (denied) return denied;
+  const added = await addDomainWithDefaults(text(fd, "host"));
+  if (!added.ok) return { error: added.error };
   revalidatePath("/admin/domains");
-  return { ok: apexUrl(host.value) ? `${host.value} added. Visitors without a valid short link go to ${apexUrl(host.value)}.` : `${host.value} added.` };
+  return { ok: added.home ? `${added.host} added. Visitors without a valid short link go to ${added.home}.` : `${added.host} added.` };
+}
+
+/** The browser could reach a domain, so it is working for visitors: stop pinning it to the top of the list. */
+export async function confirmDomainLiveAction(id: number): Promise<void> {
+  await requireAdmin();
+  if ((await adminOnlyError()) || !Number.isInteger(id)) return;
+  await markDomainLive(id);
+}
+
+/** Ends a connected app's access straight away. Anyone can end their own; admins can end anyone's. */
+export async function revokeGrantAction(_prev: State, fd: FormData): Promise<State> {
+  await requireAdmin();
+  const grantId = text(fd, "grant_id");
+  if (!grantId || grantId.length > 100) return { error: "Unknown connection." };
+  if ((await currentRole()) !== "admin") {
+    const mine = (await listGrants((await sessionIdentity()) ?? "")).some((g) => g.grant_id === grantId);
+    if (!mine) return { error: "You can only disconnect your own apps." };
+  }
+  await revokeGrant(grantId);
+  revalidatePath("/admin/connections");
+  return { ok: "Disconnected." };
 }
 
 /** Saves QR colours for a link or gallery, optionally for every QR code on its domain. */
@@ -169,6 +185,8 @@ export async function saveQrColoursAction(kind: QrKind, id: number, dark: string
 
 export async function refreshFaviconAction(_prev: State, fd: FormData): Promise<State> {
   await requireAdmin();
+  const denied = await adminOnlyError();
+  if (denied) return denied;
   const id = Number(fd.get("id"));
   const domain = (await listDomains()).find((d) => d.id === id);
   if (!domain) return { error: "That domain no longer exists." };
@@ -184,6 +202,8 @@ export async function refreshFaviconAction(_prev: State, fd: FormData): Promise<
 
 export async function updateDomainAction(_prev: State, fd: FormData): Promise<State> {
   await requireAdmin();
+  const denied = await adminOnlyError();
+  if (denied) return denied;
   const root = parseOptionalUrl(text(fd, "root_redirect_url"), "Root redirect");
   if (!root.ok) return { error: root.error };
   const nf = parseOptionalUrl(text(fd, "not_found_url"), "Not found redirect");
@@ -195,6 +215,8 @@ export async function updateDomainAction(_prev: State, fd: FormData): Promise<St
 
 export async function deleteDomainAction(_prev: State, fd: FormData): Promise<State> {
   await requireAdmin();
+  const denied = await adminOnlyError();
+  if (denied) return denied;
   try {
     await deleteDomain(Number(fd.get("id")));
   } catch (e) {
