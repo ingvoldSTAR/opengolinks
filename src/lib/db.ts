@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { SCHEMA_SQL } from "./schema";
@@ -7,7 +8,15 @@ type Row = Record<string, unknown>;
 interface Driver {
   query<T = Row>(text: string, params?: unknown[]): Promise<T[]>;
   exec(text: string): Promise<void>;
+  /** Runs the schema script once, under a database lock, and records which script version was applied. */
+  migrate(sql: string, version: string): Promise<void>;
 }
+
+/** An arbitrary number that names the schema lock. Every copy of the app uses the same one. */
+const SCHEMA_LOCK_ID = 727301;
+
+const VERSION_TABLE_SQL = "create table if not exists schema_version (id int primary key, hash text not null)";
+const RECORD_VERSION_SQL = "insert into schema_version (id, hash) values (1, $1) on conflict (id) do update set hash = excluded.hash";
 
 const g = globalThis as unknown as { __opengolinksDriver?: Promise<Driver> };
 
@@ -58,6 +67,29 @@ async function createDriver(): Promise<Driver> {
       async exec(text: string) {
         await pool.query(text);
       },
+      async migrate(sql: string, version: string) {
+        // The host can start several copies of the app at once. Without the lock they all run the same
+        // schema changes together and Postgres aborts one with "deadlock detected". The lock is taken
+        // inside a transaction, so it also works through a pooled connection string.
+        const client = await pool.connect();
+        try {
+          await client.query("begin");
+          await client.query("select pg_advisory_xact_lock($1)", [SCHEMA_LOCK_ID]);
+          await client.query(VERSION_TABLE_SQL);
+          // Another copy may have finished the work while this one waited for the lock.
+          const done = await client.query("select 1 from schema_version where id = 1 and hash = $1", [version]);
+          if (done.rowCount === 0) {
+            await client.query(sql);
+            await client.query(RECORD_VERSION_SQL, [version]);
+          }
+          await client.query("commit");
+        } catch (err) {
+          await client.query("rollback").catch(() => {});
+          throw err;
+        } finally {
+          client.release();
+        }
+      },
     };
   }
 
@@ -80,12 +112,37 @@ async function createDriver(): Promise<Driver> {
     async exec(text: string) {
       await db.exec(text);
     },
+    async migrate(sql: string, version: string) {
+      // One process owns the embedded database, so there is nothing to lock against.
+      await db.exec(VERSION_TABLE_SQL);
+      const done = await db.query("select 1 from schema_version where id = 1 and hash = $1", [version]);
+      if (done.rows.length === 0) {
+        await db.exec(sql);
+        await db.query(RECORD_VERSION_SQL, [version]);
+      }
+    },
   };
+}
+
+const SCHEMA_VERSION = createHash("sha256").update(SCHEMA_SQL).digest("hex");
+
+/**
+ * Brings the schema up to date, but only when it is not already. Doing the full script on every start
+ * made the first visitor after each restart wait for it, and let simultaneous starts collide.
+ */
+async function ensureSchema(driver: Driver): Promise<void> {
+  try {
+    const rows = await driver.query<{ hash: string }>("select hash from schema_version where id = 1");
+    if (rows[0]?.hash === SCHEMA_VERSION) return;
+  } catch {
+    // No version table yet (first run, or a database from before this check): fall through and migrate.
+  }
+  await driver.migrate(SCHEMA_SQL, SCHEMA_VERSION);
 }
 
 async function init(): Promise<Driver> {
   const driver = await createDriver();
-  await driver.exec(SCHEMA_SQL);
+  await ensureSchema(driver);
   // Accounts listed in ADMIN_EMAILS are created if missing, and are always admins. Removing one here does not delete it.
   const emails = (process.env.ADMIN_EMAILS ?? "")
     .split(",")

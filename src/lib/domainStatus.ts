@@ -121,9 +121,10 @@ export async function probe(host: string, ip: string, port = 443): Promise<boole
   return (await probeDetailed(host, ip, port)).ok;
 }
 
-// This server checks its own domains over the internet, and hosting plans can limit how many connections an app
-// may have open at once. However many domains there are, only a handful of probes run at a time.
-const MAX_PROBES = 8;
+// This server checks its own domains over the internet, and each check comes back in through the host's web server
+// to this same app. Hosting plans limit how many app processes may run at once, and a burst of checks can make the
+// host restart the app, so only a couple of probes run at a time.
+const MAX_PROBES = 2;
 let activeProbes = 0;
 const waiting: (() => void)[] = [];
 
@@ -153,25 +154,37 @@ async function runCheck(host: string): Promise<DomainCheck> {
   }
   if (addresses.length === 0 || !addresses.every(isPublicIPv4)) return done("dns-missing");
 
-  // Providers answer with several addresses; one reaching this app is enough. They are tried together, so one
-  // dead address cannot hold up the answer.
-  const probed = await Promise.all(addresses.slice(0, 4).map(async (ip) => ({ ip, ...(await withProbeSlot(() => probeDetailed(host, ip))) })));
+  // Providers answer with several addresses; one reaching this app is enough. They are tried one at a time and the
+  // first success ends the check, so a healthy domain costs a single request (a failing one, at most two).
+  const probed: DomainCheck["addresses"] = [];
+  for (const ip of addresses.slice(0, 2)) {
+    const result = await withProbeSlot(() => probeDetailed(host, ip));
+    probed.push({ ip, ...result });
+    if (result.ok) break;
+  }
   return done(probed.some((p) => p.ok) ? "live" : "needs-connect", probed);
 }
 
 const CACHE_MS = 45_000;
-const cache = new Map<string, { at: number; value: Promise<DomainCheck> }>();
+// A domain that answered is unlikely to stop within minutes, and re-checking it costs a request into this app.
+const LIVE_CACHE_MS = 10 * 60_000;
+const cache = new Map<string, { at: number; ttl: number; value: Promise<DomainCheck> }>();
 
 /**
  * What a domain looks like right now, with what was seen at each address. Results are remembered for 45 seconds
- * (and a check already under way is shared), so reloading the page does not start another slow round of checks.
+ * (10 minutes when the domain answered), and a check already under way is shared, so reloading the page does not
+ * start another round of checks.
  * `fresh` skips the memory, for "Check again".
  */
 export function inspectDomain(host: string, opts: { fresh?: boolean } = {}): Promise<DomainCheck> {
   const hit = cache.get(host);
-  if (hit && !opts.fresh && Date.now() - hit.at < CACHE_MS) return hit.value;
+  if (hit && !opts.fresh && Date.now() - hit.at < hit.ttl) return hit.value;
   const value = runCheck(host);
-  cache.set(host, { at: Date.now(), value });
+  const entry = { at: Date.now(), ttl: CACHE_MS, value };
+  cache.set(host, entry);
+  void value.then((v) => {
+    if (v.status === "live") entry.ttl = LIVE_CACHE_MS;
+  }).catch(() => {});
   if (cache.size > 200) cache.delete(cache.keys().next().value as string);
   return value;
 }
