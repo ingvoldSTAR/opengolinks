@@ -84,6 +84,22 @@ async function StatusBlock({
   wasLive: boolean;
   fresh: boolean;
 }) {
+  // A domain confirmed live before is not probed on every visit: each probe comes back into this app through the host's web
+  // server, and a page of many domains made enough of them to push a host into restarting the app. It is checked when
+  // asked ("Check now") and whenever it is new or not yet confirmed.
+  if (wasLive && !pending && !fresh) {
+    return (
+      <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1">
+        <StatusPill status="live" wasLive />
+        <span className={hint}>
+          Live when last checked.{" "}
+          <a href={`/admin/domains?recheck=${encodeURIComponent(host)}`} className="text-accent-deep hover:underline">
+            Check now
+          </a>
+        </span>
+      </div>
+    );
+  }
   const check = await inspectDomain(host, { fresh });
   const status = check.status;
   // Once a domain answers, it stops being pinned to the top of the list.
@@ -95,7 +111,7 @@ async function StatusBlock({
 
   const retry = (
     <p className={hint}>
-      Done something? <a href="/admin/domains?recheck=1" className="text-accent-deep hover:underline">Check again</a>
+      Done something? <a href={`/admin/domains?recheck=${encodeURIComponent(host)}`} className="text-accent-deep hover:underline">Check again</a>
     </p>
   );
 
@@ -155,7 +171,8 @@ async function StatusBlock({
 export default async function DomainsPage({ searchParams }: { searchParams: Promise<{ recheck?: string }> }) {
   const denied = await adminsOnly();
   if (denied) return denied;
-  const fresh = (await searchParams).recheck === "1";
+  // ?recheck=1 checks every domain afresh; ?recheck=<domain> checks just that one.
+  const recheck = (await searchParams).recheck;
   const [domains, host] = await Promise.all([listDomains(), currentHost()]);
   backfillIcons(domains);
   const target = cnameTarget(host);
@@ -223,7 +240,7 @@ export default async function DomainsPage({ searchParams }: { searchParams: Prom
             </div>
 
             <Suspense fallback={<p className="mt-3 flex items-center gap-2 text-sm text-mute"><span className="size-2 animate-pulse rounded-full bg-mute" />Checking DNS...</p>}>
-              <StatusBlock id={d.id} host={d.host} name={name} target={target} pending={!d.went_live_at} wasLive={Boolean(d.went_live_at)} fresh={fresh} />
+              <StatusBlock id={d.id} host={d.host} name={name} target={target} pending={!d.went_live_at} wasLive={Boolean(d.went_live_at)} fresh={recheck === "1" || recheck === d.host} />
             </Suspense>
 
             <ActionForm action={updateDomainAction} className="mt-4">
